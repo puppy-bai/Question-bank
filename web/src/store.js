@@ -512,12 +512,20 @@ export function parseQuestionsFromText(text) {
   const normalizedText = String(text || '')
     .replace(/\r/g, '\n')
     .replace(/\u00a0/g, ' ')
-    .replace(/[：]/g, ':')
-    .replace(/[．]/g, '.');
-  const rawLines = normalizedText.split('\n').map((line) => line.trim()).filter(Boolean);
+    .replace(/[：﹕]/g, ':')
+    .replace(/[．。]/g, '.')
+    .replace(/[（]/g, '(')
+    .replace(/[）]/g, ')')
+    .replace(/[【]/g, '[')
+    .replace(/[】]/g, ']');
+  const rawLines = normalizedText
+    .split('\n')
+    .map((line) => line.replace(/\s+/g, ' ').trim())
+    .filter(Boolean);
   const chapters = [];
   const questions = [];
   let currentChapter = '默认章节';
+  let currentMode = '';
   let current = null;
 
   function ensureChapter(name) {
@@ -528,6 +536,10 @@ export function parseQuestionsFromText(text) {
     if (!current || !current.stem) return;
     const answer = normalizeImportedAnswer(current.answerRaw, current.type);
     const type = current.type || inferType(answer, current.options);
+    if (!answer.length) {
+      current = null;
+      return;
+    }
     questions.push({
       chapterName: current.chapterName,
       type,
@@ -543,9 +555,15 @@ export function parseQuestionsFromText(text) {
   ensureChapter(currentChapter);
 
   rawLines.forEach((line) => {
-    const compact = line.replace(/\s+/g, '');
-    const chapterMatch = line.match(/^(第[一二三四五六七八九十百千万\d]+[章节].*|章节[:：].+|#+\s*.+)$/);
-    if (chapterMatch && !isOptionLine(line) && !isAnswerLine(line)) {
+    const typeSection = line.match(/^(判断题|判断题格式|选择题|选择题格式|单选题|单选题格式|多选题|多选题格式|填空题|简答题)\s*$/);
+    if (typeSection) {
+      flush();
+      currentMode = labelToType(typeSection[1]);
+      return;
+    }
+
+    const chapterMatch = line.match(/^(第[一二三四五六七八九十百千万\d]+[章节][\s、:：.-]*.*|章节[:：].+|#+\s*.+)$/);
+    if (chapterMatch && !isQuestionLine(line) && !isOptionLine(line) && !isAnswerLine(line)) {
       flush();
       currentChapter = line.replace(/^#+\s*/, '').replace(/^章节[:：]\s*/, '').trim();
       ensureChapter(currentChapter);
@@ -564,7 +582,7 @@ export function parseQuestionsFromText(text) {
       return;
     }
 
-    const inlineAnswer = line.match(/^(.*?)(?:\s+)?(?:答案|正确答案)\s*[:：]\s*([A-Ha-h,，、\s正确错误对错√×]+)$/);
+    const inlineAnswer = line.match(/^(.*?)(?:\s+)?(?:答案|正确答案|参考答案)\s*[:：]\s*([A-Ha-h,，、\s正确错误对错√×]+)$/);
     if (inlineAnswer && current) {
       if (inlineAnswer[1].trim()) current.stem += ` ${inlineAnswer[1].trim()}`;
       current.answerRaw = inlineAnswer[2].trim();
@@ -577,25 +595,58 @@ export function parseQuestionsFromText(text) {
       return;
     }
 
-    const stemMatch = line.match(/^(?:\d+[\.\、\)]\s*)?(.+?)(?:\s*[\(（【\[]\s*(单选|单项选择|多选|多项选择|判断|填空|简答)\s*[\)）】\]])?$/);
-    if (stemMatch && (/[?？。]$/.test(compact) || stemMatch[2] || !current)) {
-      if (current && (current.answerRaw || current.options.length)) flush();
+    const numbered = line.match(/^(\d+)[\.\、\)]\s*(.+)$/);
+    if (numbered) {
+      flush();
+      const parsed = splitStemAnswer(numbered[2]);
       current = {
         chapterName: currentChapter,
-        stem: stemMatch[1].trim(),
-        type: labelToType(stemMatch[2]),
+        stem: parsed.stem,
+        type: parsed.type || currentMode,
         options: [],
-        answerRaw: '',
+        answerRaw: parsed.answerRaw,
         analysis: ''
       };
+      if (current.type === 'judge' && !current.answerRaw) {
+        const judgeAnswer = current.stem.match(/(正确|错误|对|错|√|×)$/);
+        if (judgeAnswer) {
+          current.answerRaw = judgeAnswer[1];
+          current.stem = current.stem.slice(0, -judgeAnswer[1].length).trim();
+        }
+      }
       return;
     }
 
-    if (current) current.stem += ` ${line}`;
+    if (current) {
+      const parsed = splitStemAnswer(line);
+      current.stem += ` ${parsed.stem}`;
+      if (parsed.answerRaw && !current.answerRaw) current.answerRaw = parsed.answerRaw;
+      if (parsed.type && !current.type) current.type = parsed.type;
+    }
   });
 
   flush();
   return { chapters, questions };
+}
+
+function splitStemAnswer(raw) {
+  let stem = String(raw || '').trim();
+  let answerRaw = '';
+  let type = '';
+
+  const typeMatch = stem.match(/[\(\[]\s*(单选|单项选择|多选|多项选择|判断|填空|简答)\s*[\)\]]\s*$/);
+  if (typeMatch) {
+    type = labelToType(typeMatch[1]);
+    stem = stem.slice(0, typeMatch.index).trim();
+  }
+
+  const answerMatch = stem.match(/[\(\[]\s*([A-Ha-h]{1,8}|正确|错误|对|错|√|×|true|false)\s*[\)\]]\s*$/i);
+  if (answerMatch) {
+    answerRaw = answerMatch[1].trim();
+    stem = stem.slice(0, answerMatch.index).trim();
+  }
+
+  return { stem, answerRaw, type };
 }
 
 function q(idValue, bankId, chapterId, chapterName, type, stem, optionTexts, answer, analysis) {
@@ -678,6 +729,10 @@ function cleanStem(stem) {
 
 function isOptionLine(line) {
   return /^[A-Ha-h][\.\、\)]\s*/.test(line);
+}
+
+function isQuestionLine(line) {
+  return /^\d+[\.\、\)]\s+/.test(line);
 }
 
 function isAnswerLine(line) {
