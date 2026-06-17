@@ -1,0 +1,80 @@
+.card-title {
+  font-size: 32rpx;
+  font-weight: 700;
+  margin-bottom: 18rpx;
+}
+
+.picker {
+  min-height: 88rpx;
+  margin-top: 18rpx;
+  padding: 0 22rpx;
+  border-radius: 12rpx;
+  border: 2rpx solid #e5e7eb;
+  box-sizing: border-box;
+  background: #ffffff;
+  line-height: 88rpx;
+}
+
+.textarea {
+  width: 100%;
+  min-height: 130rpx;
+  margin-top: 18rpx;
+  padding: 20rpx 22rpx;
+  border-radius: 12rpx;
+  border: 2rpx solid #e5e7eb;
+  box-sizing: border-box;
+  background: #ffffff;
+  line-height: 1.5;
+}
+
+.stem {
+  min-height: 180rpx;
+}
+
+.options {
+  min-height: 230rpx;
+}
+
+.analysis {
+  min-height: 180rpx;
+}
+
+.form-actions {
+  display: grid;
+  grid-template-columns: 1fr 160rpx;
+  gap: 18rpx;
+  margin-top: 22rpx;
+}
+
+.question-row {
+  display: flex;
+  align-items: center;
+  gap: 18rpx;
+  padding: 24rpx 0;
+  border-top: 1rpx solid #e5e7eb;
+}
+
+.question-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.strong {
+  font-weight: 700;
+  line-height: 1.5;
+}
+
+.mini-btn {
+  flex: 0 0 128rpx;
+  height: 64rpx;
+  padding: 0;
+  border-radius: 10rpx;
+  background: #eaf2ff;
+  color: #1d4ed8;
+  font-size: 24rpx;
+  line-height: 64rpx;
+}
+
+.empty {
+  padding: 18rpx 0 4rpx;
+}

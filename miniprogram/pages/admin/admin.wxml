@@ -1,0 +1,21 @@
+<view class="page">
+  <view class="section">
+    <view class="title">管理入口</view>
+    <view class="subtitle">管理员密码只作为入口校验，正式操作还会校验 OpenID 和管理员角色。首次使用时会自动绑定当前微信为管理员。</view>
+  </view>
+
+  <view class="section panel">
+    <input class="input" password placeholder="请输入管理员密码" value="{{password}}" bindinput="onPasswordInput" />
+    <input class="input token" placeholder="首次初始化令牌，可留空" value="{{setupToken}}" bindinput="onSetupTokenInput" />
+    <button class="button login" loading="{{loading}}" bindtap="login">进入管理</button>
+  </view>
+
+  <view class="section panel" wx:if="{{authed}}">
+    <view class="admin-link" bindtap="goImport">Word 题库导入</view>
+    <view class="admin-link" bindtap="goQuestions">题目维护</view>
+    <view class="admin-link" bindtap="goExamTemplates">考试模板</view>
+    <view class="admin-link" bindtap="goUsers">用户与数据</view>
+    <view class="admin-link" bindtap="goStats">数据统计</view>
+    <view class="admin-link" bindtap="goBanks">题库管理</view>
+  </view>
+</view>

@@ -1,0 +1,100 @@
+<view class="page practice-page">
+  <view class="section topbar">
+    <view>
+      <view class="bank-name">{{sessionTitle || '章节练习'}}</view>
+      <view class="muted" wx:if="{{hideProgressCount}}">{{bankName || '题库'}} · 随机练习 · 正确 {{correctCount}} · 错误 {{wrongCount}}</view>
+      <view class="muted" wx:else>{{bankName || '题库'}} · {{currentIndex + 1}} / {{total}} · 正确 {{correctCount}} · 错误 {{wrongCount}}</view>
+    </view>
+    <view class="mode-switch" wx:if="{{sessionMode === 'practice'}}">
+      <view class="mode {{mode === 'answer' ? 'active' : ''}}" data-mode="answer" bindtap="changeMode">答题</view>
+      <view class="mode {{mode === 'review' ? 'active' : ''}}" data-mode="review" bindtap="changeMode">背题</view>
+    </view>
+  </view>
+
+  <view class="section" wx:if="{{loading}}">
+    <view class="panel">{{loadingText || '正在加载题目...'}}</view>
+  </view>
+
+  <view class="section panel" wx:elif="{{question}}">
+    <view class="row question-meta">
+      <view class="tag">{{question.typeLabel}}</view>
+      <view class="meta-right">
+        <view class="muted">{{question.chapterName}}</view>
+        <view class="favorite {{question.favorited ? 'active' : ''}}" bindtap="toggleFavorite">
+          {{question.favorited ? '已收藏' : '收藏'}}
+        </view>
+      </view>
+    </view>
+    <view class="group-stem" wx:if="{{question.groupStem}}">{{question.groupStem}}</view>
+    <view class="stem">{{question.stem}}</view>
+    <view class="options" wx:if="{{question.options.length}}">
+      <view
+        class="option {{item.isSelected ? 'selected' : ''}} {{showAnalysis && item.isRight ? 'right' : ''}} {{showAnalysis && item.isWrongSelected ? 'wrong' : ''}}"
+        wx:for="{{question.options}}"
+        wx:key="key"
+        bindtap="selectOption"
+        data-key="{{item.key}}"
+      >
+        <view class="option-key" wx:if="{{!item.plain}}">{{item.key}}</view>
+        <view class="option-text {{item.plain ? 'plain' : ''}}">{{item.text || item.key || '图片选项'}}</view>
+      </view>
+    </view>
+    <textarea
+      wx:if="{{!question.options.length && mode === 'answer' && !showAnalysis}}"
+      class="answer-input"
+      placeholder="请输入答案；填空题多空可用逗号或换行分隔"
+      value="{{textAnswer}}"
+      bindinput="onTextAnswer"
+    />
+  </view>
+
+  <view class="section panel analysis-panel {{submitResult.correct ? 'analysis-ok' : 'analysis-bad'}}" wx:if="{{showAnalysis && submitResult}}">
+    <view class="analysis-title">{{mode === 'review' ? '参考答案' : (submitResult.correct ? '回答正确' : '回答错误')}}</view>
+    <view class="muted">正确答案：{{submitResult.answerText}}</view>
+    <view class="analysis">{{submitResult.analysis || '暂无解析'}}</view>
+  </view>
+
+  <view class="section panel" wx:if="{{!loading && !question}}">
+    <view class="analysis-title">暂无题目</view>
+    <view class="muted">{{emptyMessage || '请先在管理入口导入并发布题库。'}}</view>
+  </view>
+
+  <view class="sheet-mask" wx:if="{{sheetOpen}}" bindtap="toggleSheet"></view>
+  <view class="answer-sheet {{sheetOpen ? 'open' : ''}}">
+    <view class="sheet-head">
+      <view class="sheet-title">答题卡</view>
+      <view class="muted">{{backgroundLoading ? loadingText : '已同步'}}</view>
+    </view>
+    <scroll-view scroll-y class="sheet-scroll">
+      <view class="sheet-grid">
+        <view
+          wx:for="{{questions}}"
+          wx:key="id"
+          data-index="{{index}}"
+          bindtap="jumpToQuestion"
+          class="sheet-num {{index === currentIndex ? 'current' : ''}} {{sessionMode !== 'exam' && answeredMap[item.id] && answeredMap[item.id].result && answeredMap[item.id].result.correct ? 'ok' : ''}} {{sessionMode !== 'exam' && answeredMap[item.id] && answeredMap[item.id].result && !answeredMap[item.id].result.correct ? 'bad' : ''}} {{sessionMode === 'exam' && answeredMap[item.id] ? 'done' : ''}}"
+        >
+          {{index + 1}}
+        </view>
+      </view>
+    </scroll-view>
+  </view>
+
+  <view class="bottom-bar" wx:if="{{question}}">
+    <button
+      class="confirm-btn"
+      wx:if="{{sessionMode !== 'exam' && mode === 'answer' && !showAnalysis && (question.type === 'multiple' || !question.options.length)}}"
+      loading="{{submitting}}"
+      bindtap="submitAnswer"
+    >
+      {{question.type === 'multiple' ? '确认答案' : '提交答案'}}
+    </button>
+    <view class="nav-row">
+      <view class="bar-btn" bindtap="previousQuestion">上一题</view>
+      <view class="bar-btn" bindtap="toggleSheet">答题卡</view>
+      <view class="bar-btn primary" bindtap="nextQuestion">
+        {{sessionMode === 'exam' && currentIndex + 1 >= total ? '交卷' : (currentIndex + 1 >= total ? '完成' : '下一题')}}
+      </view>
+    </view>
+  </view>
+</view>

@@ -1,0 +1,78 @@
+<view class="page">
+  <view class="section">
+    <view class="title">数据统计</view>
+    <view class="subtitle">查看题库使用、正确率、高频错题和最近答题记录。</view>
+  </view>
+
+  <view class="section metrics">
+    <view class="panel metric">
+      <view class="metric-num">{{summary.questionCount}}</view>
+      <view class="muted">已发布题目</view>
+    </view>
+    <view class="panel metric">
+      <view class="metric-num">{{summary.attemptCount}}</view>
+      <view class="muted">答题次数</view>
+    </view>
+    <view class="panel metric">
+      <view class="metric-num">{{summary.correctRate}}%</view>
+      <view class="muted">整体正确率</view>
+    </view>
+    <view class="panel metric">
+      <view class="metric-num">{{summary.activeUserCount}}</view>
+      <view class="muted">活跃用户</view>
+    </view>
+  </view>
+
+  <view class="section panel">
+    <view class="panel-head">
+      <view class="card-title">题库排行</view>
+      <button size="mini" loading="{{loading}}" bindtap="refresh">刷新</button>
+    </view>
+    <view class="rank-row" wx:for="{{bankStats}}" wx:key="bankId">
+      <view class="rank-index">{{index + 1}}</view>
+      <view class="rank-main">
+        <view class="strong">{{item.name}}</view>
+        <view class="muted">{{item.metaText}}</view>
+      </view>
+      <view class="rate">{{item.correctRate}}%</view>
+    </view>
+    <view class="muted empty" wx:if="{{!bankStats.length && !loading}}">暂无题库统计，用户开始答题后会出现在这里。</view>
+  </view>
+
+  <view class="section panel">
+    <view class="card-title">题型表现</view>
+    <view class="type-row" wx:for="{{typeStats}}" wx:key="type">
+      <view>
+        <view class="strong">{{item.label}}</view>
+        <view class="muted">{{item.attemptCount}} 次作答</view>
+      </view>
+      <view class="rate">{{item.correctRate}}%</view>
+    </view>
+    <view class="muted empty" wx:if="{{!typeStats.length && !loading}}">暂无题型数据。</view>
+  </view>
+
+  <view class="section panel">
+    <view class="card-title">高频错题</view>
+    <view class="wrong-row" wx:for="{{topWrongQuestions}}" wx:key="questionId">
+      <view class="strong">{{item.shortStem}}</view>
+      <view class="muted">{{item.metaText}}</view>
+      <view class="wrong-meta">
+        <view class="stat-chip bad">{{item.wrongCount}} 次错误</view>
+        <view class="stat-chip">{{item.questionId}}</view>
+      </view>
+    </view>
+    <view class="muted empty" wx:if="{{!topWrongQuestions.length && !loading}}">暂无未掌握错题。</view>
+  </view>
+
+  <view class="section panel">
+    <view class="card-title">最近答题</view>
+    <view class="attempt-row" wx:for="{{recentAttempts}}" wx:key="id">
+      <view>
+        <view class="strong">{{item.bankName}}</view>
+        <view class="muted">{{item.shortOpenid}} · {{item.createdText}} · {{item.durationText}}</view>
+      </view>
+      <view class="result {{item.resultClass}}">{{item.resultText}}</view>
+    </view>
+    <view class="muted empty" wx:if="{{!recentAttempts.length && !loading}}">暂无答题记录。</view>
+  </view>
+</view>

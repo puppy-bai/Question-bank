@@ -1,0 +1,26 @@
+.input {
+  height: 88rpx;
+  padding: 0 22rpx;
+  border-radius: 12rpx;
+  border: 2rpx solid #e5e7eb;
+  box-sizing: border-box;
+  background: #ffffff;
+}
+
+.login {
+  margin-top: 24rpx;
+}
+
+.token {
+  margin-top: 18rpx;
+}
+
+.admin-link {
+  padding: 28rpx 0;
+  border-bottom: 1rpx solid #e5e7eb;
+  font-weight: 700;
+}
+
+.admin-link:last-child {
+  border-bottom: 0;
+}

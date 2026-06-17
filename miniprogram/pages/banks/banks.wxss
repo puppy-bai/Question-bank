@@ -1,0 +1,43 @@
+.bank-title {
+  font-size: 32rpx;
+  font-weight: 700;
+  margin-bottom: 10rpx;
+}
+
+.progress {
+  height: 12rpx;
+  margin-top: 24rpx;
+  border-radius: 999rpx;
+  background: #e5e7eb;
+  overflow: hidden;
+}
+
+.progress-inner {
+  height: 100%;
+  border-radius: inherit;
+  background: #2563eb;
+}
+
+.bank-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 18rpx;
+}
+
+.join-btn {
+  margin: 0;
+  color: #1d4ed8;
+}
+
+.join-btn.joined {
+  color: #047857;
+}
+
+.empty {
+  text-align: center;
+}
+
+.tag-warning {
+  background: #fff7ed;
+  color: #9a3412;
+}

@@ -1,0 +1,64 @@
+<view class="page">
+  <view class="section">
+    <view class="title">考试模板</view>
+    <view class="subtitle">配置模拟考试的总题数、题型比例和章节比例，用户端可直接使用这里的默认模板。</view>
+  </view>
+
+  <view class="section panel">
+    <view class="card-title">选择题库</view>
+    <picker mode="selector" range="{{bankLabels}}" value="{{selectedBankIndex}}" bindchange="onBankChange">
+      <view class="picker">{{selectedBankIndex >= 0 ? bankLabels[selectedBankIndex] : '请选择题库'}}</view>
+    </picker>
+    <view class="muted tip" wx:if="{{selectedBankIndex >= 0}}">
+      当前模板用于用户端“模拟考试”，满分固定为 100 分。
+    </view>
+  </view>
+
+  <view class="section panel" wx:if="{{selectedBankIndex >= 0}}">
+    <view class="card-title">题型比例</view>
+    <view class="field">
+      <view class="label">总题数</view>
+      <input class="input" type="number" value="{{form.totalQuestions}}" bindinput="onTotalInput" />
+    </view>
+
+    <view class="field" wx:for="{{typeFields}}" wx:key="key">
+      <view class="label">{{item.label}}</view>
+      <input
+        class="input"
+        type="number"
+        value="{{form.typeRatios[item.key]}}"
+        data-field="{{item.key}}"
+        bindinput="onRatioInput"
+      />
+    </view>
+
+    <view class="muted tip">比例会按总和自动折算，例如 40 / 20 / 40 表示单选 40%、多选 20%、判断 40%。</view>
+  </view>
+
+  <view class="section panel" wx:if="{{selectedBankIndex >= 0}}">
+    <view class="card-title">章节比例</view>
+    <view class="muted tip">留空则按章节题量自动分配；填写数值后，会优先按你设置的章节权重组卷。</view>
+
+    <view class="chapter-field" wx:for="{{chapterFields}}" wx:key="id">
+      <view>
+        <view class="chapter-name">{{item.name}}</view>
+        <view class="muted">{{item.questionCount || 0}} 道题</view>
+      </view>
+      <input
+        class="input chapter-input"
+        type="number"
+        value="{{form.chapterRatios[item.id]}}"
+        data-field="{{item.id}}"
+        bindinput="onChapterRatioInput"
+      />
+    </view>
+
+    <view class="muted tip" wx:if="{{!chapterFields.length}}">当前题库暂无章节，将按整库范围组卷。</view>
+    <button class="button save" loading="{{saving}}" bindtap="saveTemplate">保存模板</button>
+  </view>
+
+  <view class="section panel empty" wx:if="{{!loading && !banks.length}}">
+    <view class="card-title">暂无已发布题库</view>
+    <view class="muted">请先导入并发布题库，再配置考试模板。</view>
+  </view>
+</view>

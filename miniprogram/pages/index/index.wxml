@@ -1,0 +1,77 @@
+<view class="page">
+  <view class="section header">
+    <view class="title">练习</view>
+    <view class="subtitle">先选择练习方式，再从我的题库中开始刷题。</view>
+  </view>
+
+  <view class="section stat-grid">
+    <view class="panel stat">
+      <view class="stat-num">{{stats.myBankCount}}</view>
+      <view class="muted">我的题库</view>
+    </view>
+    <view class="panel stat" bindtap="goWrong">
+      <view class="stat-num bad">{{stats.wrongCount}}</view>
+      <view class="muted">答错的题</view>
+    </view>
+  </view>
+
+  <view class="section mode-grid">
+    <view
+      class="mode-card {{selectedMode === item.key ? 'active' : ''}}"
+      wx:for="{{modeOptions}}"
+      wx:key="key"
+      data-mode="{{item.key}}"
+      bindtap="selectMode"
+    >
+      <view class="mode-card-head">
+        <view class="mode-index">0{{index + 1}}</view>
+        <view class="mode-check {{selectedMode === item.key ? 'active' : ''}}"></view>
+      </view>
+      <view class="mode-title">{{item.title}}</view>
+    </view>
+  </view>
+
+  <view class="section panel" wx:if="{{selectedMode === 'special'}}">
+    <view class="card-title">选择专项题型</view>
+    <view class="type-row">
+      <view
+        class="type-chip {{selectedType === item.key ? 'active' : ''}}"
+        wx:for="{{typeOptions}}"
+        wx:key="key"
+        data-type="{{item.key}}"
+        bindtap="selectType"
+      >
+        {{item.label}}
+      </view>
+    </view>
+  </view>
+
+  <view class="section panel">
+    <view class="row">
+      <view>
+        <view class="card-title">选择我的题库</view>
+        <view class="muted">只有已加入的题库会出现在这里</view>
+      </view>
+      <button class="button secondary small-button" bindtap="goBanks">去加入</button>
+    </view>
+
+    <view
+      class="bank-row"
+      wx:for="{{joinedBanks}}"
+      wx:key="id"
+      data-bank-id="{{item.id}}"
+      bindtap="startWithBank"
+    >
+      <view>
+        <view class="bank-title">{{item.name}}</view>
+        <view class="muted">{{item.metaText}}</view>
+      </view>
+      <view class="bank-action">开始</view>
+    </view>
+
+    <view class="empty" wx:if="{{!joinedBanks.length && !loading}}">
+      <view class="bank-title">还没有加入题库</view>
+      <view class="muted">去“题库”界面选择需要的题库，加入后即可练习。</view>
+    </view>
+  </view>
+</view>

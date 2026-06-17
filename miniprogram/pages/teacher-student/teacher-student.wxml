@@ -1,0 +1,39 @@
+<view class="page">
+  <view class="section panel" wx:if="{{student}}">
+    <view class="title">{{student.name}}</view>
+    <view class="subtitle">{{student.className}}</view>
+  </view>
+
+  <view class="section metrics">
+    <view class="panel metric">
+      <view class="metric-num">{{summary.attempts}}</view>
+      <view class="muted">答题次数</view>
+    </view>
+    <view class="panel metric">
+      <view class="metric-num">{{summary.correctRate}}%</view>
+      <view class="muted">正确率</view>
+    </view>
+    <view class="panel metric">
+      <view class="metric-num">{{summary.wrongCount}}</view>
+      <view class="muted">未掌握错题</view>
+    </view>
+  </view>
+
+  <view class="section panel">
+    <view class="card-title">未掌握错题</view>
+    <view class="wrong-row" wx:for="{{wrongQuestions}}" wx:key="id">
+      <view class="wrong-stem">{{item.stem}}</view>
+      <view class="muted">{{item.type}} · 错误 {{item.wrongCount}} 次</view>
+    </view>
+    <view class="muted" wx:if="{{!wrongQuestions.length}}">暂无未掌握错题。</view>
+  </view>
+
+  <view class="section panel">
+    <view class="card-title">最近答题</view>
+    <view class="attempt-row" wx:for="{{attempts}}" wx:key="id">
+      <view>{{item.type}}</view>
+      <view class="{{item.correct ? 'ok' : 'bad'}}">{{item.correct ? '正确' : '错误'}}</view>
+    </view>
+    <view class="muted" wx:if="{{!attempts.length}}">暂无答题记录。</view>
+  </view>
+</view>

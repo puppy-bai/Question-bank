@@ -1,0 +1,44 @@
+<view class="page">
+  <view class="section">
+    <view class="title">Word 导入</view>
+    <view class="subtitle">支持参考模板中的自由文本题库格式，导入前会先生成预览和错误报告。</view>
+  </view>
+
+  <view class="section panel">
+    <button class="button" bindtap="chooseWord">选择 .docx 文件</button>
+    <view class="muted hint">暂不支持老式 .doc 文件。</view>
+  </view>
+
+  <view class="section panel" wx:if="{{loading}}">
+    <view class="card-title">正在解析</view>
+    <view class="muted">文件上传后会先快速解析，再进入分批导入流程。</view>
+    <view class="muted hint" wx:if="{{statusText}}">{{statusText}}</view>
+  </view>
+
+  <view class="section panel" wx:if="{{preview}}">
+    <view class="card-title">导入预览</view>
+    <view class="muted">
+      识别题目：{{preview.totalQuestions}}，警告：{{preview.warningCount || preview.warnings.length}}，错误：{{preview.errors.length}}
+    </view>
+    <view class="debug">
+      <view>解析器：{{preview.parserVersion}}</view>
+      <view>Word 段落：{{preview.paragraphCount}}</view>
+      <view>导入方式：50 题/批</view>
+    </view>
+    <view class="warn-box" wx:if="{{!preview.totalQuestions}}">
+      <view class="warn-title">没有识别到题目</view>
+      <view class="muted">请确认 parseWord 云函数已重新部署。若解析器仍显示 unknown 或段落数为 0，说明云端还没有运行到最新解析逻辑。</view>
+      <view class="raw-line" wx:for="{{preview.firstParagraphs}}" wx:key="index">{{index + 1}}. {{item}}</view>
+    </view>
+    <input class="bank-input" placeholder="请输入题库名称，如：人工智能基础题库" value="{{bankName}}" bindinput="onBankNameInput" />
+    <button class="button confirm" loading="{{confirming}}" bindtap="confirmImport">确认导入题库</button>
+    <view class="muted hint" wx:if="{{confirming && statusText}}">{{statusText}}</view>
+    <view class="muted hint" wx:if="{{preview.totalQuestions > preview.questions.length}}">
+      当前仅展示前 {{preview.questions.length}} 题预览，确认导入会分批导入全部 {{preview.totalQuestions}} 题。
+    </view>
+    <view class="preview-question" wx:for="{{preview.questions}}" wx:key="index">
+      <view class="preview-stem">{{index + 1}}. {{item.stem}}</view>
+      <view class="muted">{{item.chapter}} · {{item.type}} · 答案 {{item.answerText}}</view>
+    </view>
+  </view>
+</view>

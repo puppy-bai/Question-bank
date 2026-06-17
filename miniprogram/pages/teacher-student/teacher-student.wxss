@@ -1,0 +1,50 @@
+.metrics {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 16rpx;
+}
+
+.metric {
+  min-height: 130rpx;
+}
+
+.metric-num {
+  font-size: 40rpx;
+  font-weight: 800;
+  color: #2563eb;
+  margin-bottom: 10rpx;
+}
+
+.card-title {
+  font-size: 32rpx;
+  font-weight: 700;
+  margin-bottom: 12rpx;
+}
+
+.wrong-row,
+.attempt-row {
+  padding: 22rpx 0;
+  border-top: 1rpx solid #e5e7eb;
+}
+
+.attempt-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.wrong-stem {
+  font-weight: 700;
+  line-height: 1.5;
+  margin-bottom: 8rpx;
+}
+
+.ok {
+  color: #059669;
+  font-weight: 700;
+}
+
+.bad {
+  color: #dc2626;
+  font-weight: 700;
+}

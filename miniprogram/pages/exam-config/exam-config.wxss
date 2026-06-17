@@ -1,0 +1,106 @@
+.page {
+  padding-bottom: 150rpx;
+}
+
+.header .title {
+  margin-bottom: 10rpx;
+}
+
+.card-title {
+  font-size: 32rpx;
+  font-weight: 800;
+  color: #0f172a;
+  margin-bottom: 18rpx;
+}
+
+.mode-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16rpx;
+}
+
+.mode-chip {
+  height: 82rpx;
+  border-radius: 14rpx;
+  background: #f1f5f9;
+  color: #334155;
+  font-weight: 700;
+  line-height: 82rpx;
+  text-align: center;
+}
+
+.mode-chip.active {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.field {
+  margin-top: 18rpx;
+}
+
+.field.compact {
+  display: grid;
+  grid-template-columns: 180rpx minmax(0, 1fr);
+  align-items: center;
+  gap: 18rpx;
+}
+
+.label {
+  color: #334155;
+  font-weight: 700;
+}
+
+.input {
+  width: 100%;
+  height: 88rpx;
+  padding: 0 22rpx;
+  border-radius: 12rpx;
+  border: 2rpx solid #e5e7eb;
+  box-sizing: border-box;
+  background: #ffffff;
+}
+
+.ratio-input {
+  text-align: right;
+}
+
+.tip {
+  margin-top: 14rpx;
+  line-height: 1.6;
+}
+
+.chapter-field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 180rpx;
+  align-items: center;
+  gap: 18rpx;
+  padding: 22rpx 0;
+  border-top: 1rpx solid #e5e7eb;
+}
+
+.chapter-name {
+  font-size: 30rpx;
+  font-weight: 700;
+  color: #111827;
+  margin-bottom: 8rpx;
+}
+
+.empty {
+  padding-top: 20rpx;
+}
+
+.bottom-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 20rpx 32rpx 36rpx;
+  background: #ffffff;
+  border-top: 1rpx solid #e5e7eb;
+  box-shadow: 0 -8rpx 24rpx rgba(15, 23, 42, 0.06);
+  box-sizing: border-box;
+}
+
+.start {
+  width: 100%;
+}

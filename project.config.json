@@ -1,0 +1,56 @@
+{
+  "description": "学校内部题库微信小程序",
+  "packOptions": {
+    "ignore": [
+      {
+        "value": "docs",
+        "type": "folder"
+      }
+    ],
+    "include": []
+  },
+  "setting": {
+    "urlCheck": true,
+    "es6": true,
+    "enhance": true,
+    "postcss": true,
+    "minified": true,
+    "newFeature": true,
+    "coverView": true,
+    "nodeModules": false,
+    "autoAudits": false,
+    "showShadowRootInWxmlPanel": true,
+    "scopeDataCheck": false,
+    "uglifyFileName": false,
+    "checkInvalidKey": true,
+    "checkSiteMap": true,
+    "uploadWithSourceMap": true,
+    "compileHotReLoad": false,
+    "babelSetting": {
+      "ignore": [],
+      "disablePlugins": [],
+      "outputPath": ""
+    },
+    "compileWorklet": false,
+    "packNpmManually": false,
+    "packNpmRelationList": [],
+    "minifyWXSS": true,
+    "minifyWXML": true,
+    "localPlugins": false,
+    "disableUseStrict": false,
+    "useCompilerPlugins": false,
+    "condition": false,
+    "swc": false,
+    "disableSWC": true
+  },
+  "compileType": "miniprogram",
+  "libVersion": "latest",
+  "appid": "wxd3881452c46ea929",
+  "projectname": "question-bank-miniprogram",
+  "cloudfunctionRoot": "cloudfunctions/",
+  "miniprogramRoot": "miniprogram/",
+  "condition": {},
+  "simulatorPluginLibVersion": {},
+  "editorSetting": {},
+  "cloudfunctionTemplateRoot": "cloudfunctionTemplate/"
+}

@@ -1,0 +1,11 @@
+node_modules/
+web/node_modules/
+web/dist/
+.DS_Store
+*.log
+miniprogram_npm/
+cloudfunctions/**/node_modules/
+cloudfunctions/**/package-lock.json
+.tmp/
+external/
+project.private.config.json

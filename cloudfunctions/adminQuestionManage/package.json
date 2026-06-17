@@ -1,0 +1,8 @@
+{
+  "name": "admin-question-manage",
+  "version": "0.1.0",
+  "main": "index.js",
+  "dependencies": {
+    "wx-server-sdk": "latest"
+  }
+}

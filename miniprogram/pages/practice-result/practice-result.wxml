@@ -1,0 +1,43 @@
+<view class="page result-page">
+  <view class="section result-head">
+    <view class="title">{{resultTitle}}</view>
+    <view class="subtitle">{{bankName}}</view>
+    <view class="score-ring">
+      <view class="score-num">{{correctRate}}%</view>
+      <view class="muted">正确率</view>
+    </view>
+  </view>
+
+  <view class="section stats-grid">
+    <view class="panel stat">
+      <view class="stat-num">{{total}}</view>
+      <view class="muted">总题数</view>
+    </view>
+    <view class="panel stat">
+      <view class="stat-num ok">{{correctCount}}</view>
+      <view class="muted">正确</view>
+    </view>
+    <view class="panel stat">
+      <view class="stat-num bad">{{wrongCount}}</view>
+      <view class="muted">错误</view>
+    </view>
+    <view class="panel stat">
+      <view class="stat-num">{{unansweredCount}}</view>
+      <view class="muted">未答</view>
+    </view>
+  </view>
+
+  <view class="section panel row">
+    <view>
+      <view class="card-title">练习用时</view>
+      <view class="muted">{{durationText}}</view>
+    </view>
+    <view class="tag">已保存</view>
+  </view>
+
+  <view class="actions">
+    <button class="button" bindtap="retry">再练一轮</button>
+    <button class="button secondary" bindtap="goWrong">查看错题</button>
+    <button class="plain-btn" bindtap="goBanks">返回题库</button>
+  </view>
+</view>

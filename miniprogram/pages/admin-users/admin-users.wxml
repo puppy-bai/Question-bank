@@ -1,0 +1,64 @@
+<view class="page">
+  <view class="section">
+    <view class="title">用户与数据</view>
+    <view class="subtitle">查看用户活跃、答题表现、错题和收藏数据，并维护管理员权限。</view>
+  </view>
+
+  <view class="section metrics">
+    <view class="panel metric">
+      <view class="metric-num">{{summary.userCount}}</view>
+      <view class="muted">用户</view>
+    </view>
+    <view class="panel metric">
+      <view class="metric-num">{{summary.activeUserCount}}</view>
+      <view class="muted">已答题用户</view>
+    </view>
+    <view class="panel metric">
+      <view class="metric-num">{{summary.attemptCount}}</view>
+      <view class="muted">答题次数</view>
+    </view>
+    <view class="panel metric">
+      <view class="metric-num">{{summary.avgCorrectRate}}%</view>
+      <view class="muted">整体正确率</view>
+    </view>
+    <view class="panel metric">
+      <view class="metric-num">{{summary.wrongCount}}</view>
+      <view class="muted">未掌握错题</view>
+    </view>
+    <view class="panel metric">
+      <view class="metric-num">{{summary.favoriteCount}}</view>
+      <view class="muted">收藏题目</view>
+    </view>
+  </view>
+
+  <view class="section panel">
+    <view class="card-title">用户资料</view>
+    <input class="input" placeholder="用户 OpenID" value="{{userForm.openid}}" data-field="openid" bindinput="onUserFieldInput" />
+    <input class="input" placeholder="备注名称，可选" value="{{userForm.name}}" data-field="name" bindinput="onUserFieldInput" />
+    <picker mode="selector" range="{{roleLabels}}" value="{{roleIndex}}" bindchange="onRoleChange">
+      <view class="picker">权限：{{roleLabels[roleIndex]}}</view>
+    </picker>
+    <view class="form-actions">
+      <button class="button" loading="{{saving}}" bindtap="saveUser">保存用户</button>
+      <button class="button secondary" bindtap="resetUserForm">清空</button>
+    </view>
+  </view>
+
+  <view class="section panel">
+    <view class="card-title">用户列表</view>
+    <view class="user-row" wx:for="{{users}}" wx:key="openid" bindtap="editUser" data-openid="{{item.openid}}">
+      <view class="user-main">
+        <view class="strong">{{item.displayName}} <text class="tag small">{{item.roleLabel}}</text></view>
+        <view class="muted">{{item.shortOpenid}}</view>
+        <view class="muted">最近活跃：{{item.lastActiveText}}</view>
+      </view>
+      <view class="user-stats">
+        <view class="stat-chip">{{item.attemptCount}} 次</view>
+        <view class="stat-chip">{{item.correctRate}}%</view>
+        <view class="stat-chip bad">{{item.wrongCount}} 错题</view>
+        <view class="stat-chip">{{item.favoriteCount}} 收藏</view>
+      </view>
+    </view>
+    <view class="muted empty" wx:if="{{!users.length && !loading}}">暂无用户。用户首次登录后会自动出现在这里。</view>
+  </view>
+</view>

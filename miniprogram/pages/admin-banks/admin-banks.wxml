@@ -1,0 +1,47 @@
+<view class="page">
+  <view class="section">
+    <view class="title">题库管理</view>
+    <view class="subtitle">管理题库名称、发布状态、可见范围和题目内容。</view>
+  </view>
+
+  <view class="section panel">
+    <view class="card-title">设置展示范围</view>
+    <picker mode="selector" range="{{bankLabels}}" value="{{selectedBankIndex}}" bindchange="onBankChange">
+      <view class="picker">{{selectedBankIndex >= 0 ? bankLabels[selectedBankIndex] : '选择题库'}}</view>
+    </picker>
+    <picker mode="selector" range="{{modeLabels}}" value="{{selectedModeIndex}}" bindchange="onModeChange">
+      <view class="picker">范围：{{modeLabels[selectedModeIndex]}}</view>
+    </picker>
+
+    <checkbox-group wx:if="{{selectedModeIndex === 1}}" bindchange="onClassChange">
+      <label class="check-row" wx:for="{{classOptions}}" wx:key="id">
+        <checkbox value="{{item.id}}" checked="{{item.checked}}" />
+        <view>{{item.name}}</view>
+      </label>
+    </checkbox-group>
+    <view class="muted empty" wx:if="{{selectedModeIndex === 1 && !classOptions.length}}">暂无分组，后续可在用户管理中维护。</view>
+
+    <button class="button save" loading="{{saving}}" bindtap="saveVisibility">保存展示范围</button>
+  </view>
+
+  <view class="section panel">
+    <view class="card-title">当前题库</view>
+    <view class="bank-row" wx:for="{{banks}}" wx:key="id" bindtap="editBank" data-index="{{index}}">
+      <view class="bank-main">
+        <view class="bank-head">
+          <view class="strong">{{item.name}}</view>
+          <view class="tag {{item.status === 'importing' ? 'tag-warning' : ''}}">{{item.statusText}}</view>
+        </view>
+        <view class="muted">{{item.metaText}}</view>
+        <view class="muted">展示：{{item.scopeText || '未配置'}}</view>
+        <view class="actions">
+          <button size="mini" data-index="{{index}}" catchtap="manageQuestions">管理题目</button>
+          <button size="mini" data-index="{{index}}" catchtap="renameBank">重命名</button>
+          <button size="mini" data-index="{{index}}" catchtap="publishBank">{{item.status === 'published' ? '重新统计' : '发布'}}</button>
+          <button size="mini" class="danger" data-index="{{index}}" catchtap="deleteBank">删除</button>
+        </view>
+      </view>
+    </view>
+    <view class="muted empty" wx:if="{{!banks.length && !loading}}">暂无题库，请先导入 Word 题库。</view>
+  </view>
+</view>

@@ -1,0 +1,77 @@
+.card-title {
+  font-size: 32rpx;
+  font-weight: 700;
+  margin-bottom: 18rpx;
+}
+
+.picker {
+  min-height: 88rpx;
+  margin-top: 18rpx;
+  padding: 0 22rpx;
+  border-radius: 12rpx;
+  border: 2rpx solid #e5e7eb;
+  box-sizing: border-box;
+  background: #ffffff;
+  line-height: 88rpx;
+}
+
+.check-row {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  min-height: 72rpx;
+  border-top: 1rpx solid #e5e7eb;
+}
+
+.save {
+  margin-top: 24rpx;
+}
+
+.bank-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20rpx;
+  padding: 24rpx 0;
+  border-top: 1rpx solid #e5e7eb;
+}
+
+.bank-main {
+  width: 100%;
+}
+
+.bank-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12rpx;
+  margin-top: 18rpx;
+}
+
+.actions button {
+  margin: 0;
+}
+
+.actions .danger {
+  color: #b91c1c;
+}
+
+.strong {
+  font-weight: 700;
+  line-height: 1.5;
+}
+
+.empty {
+  padding: 18rpx 0 4rpx;
+}
+
+.tag-warning {
+  background: #fff7ed;
+  color: #9a3412;
+}

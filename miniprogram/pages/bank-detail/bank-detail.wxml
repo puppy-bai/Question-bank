@@ -1,0 +1,48 @@
+<view class="page">
+  <view class="section panel hero" wx:if="{{bank}}">
+    <view class="bank-title">{{bank.name}}</view>
+    <view class="muted desc">{{bank.description || '加入我的题库后，可进行顺序练习、随机练习、章节练习和模拟考试。'}}</view>
+    <view class="metrics">
+      <view>
+        <view class="metric-num">{{bank.questionCount}}</view>
+        <view class="muted">题目</view>
+      </view>
+      <view>
+        <view class="metric-num">{{bank.chapterCount}}</view>
+        <view class="muted">章节</view>
+      </view>
+      <view>
+        <view class="metric-num">{{bank.correctRate}}%</view>
+        <view class="muted">正确率</view>
+      </view>
+    </view>
+    <button class="button join-button" wx:if="{{!bank.joined}}" loading="{{joining}}" bindtap="joinBank">加入我的题库</button>
+    <view class="joined-tip" wx:else>已加入我的题库</view>
+  </view>
+
+  <view class="section action-grid" wx:if="{{bank && !focusChapter}}">
+    <button class="button" bindtap="startAllPractice">顺序练习</button>
+    <button class="button secondary" bindtap="startRandomTest">随机练习</button>
+    <button class="button secondary" bindtap="startExam">模拟考试</button>
+  </view>
+
+  <view class="section panel">
+    <view class="row section-head">
+      <view>
+        <view class="card-title">章节练习</view>
+        <view class="muted">选择一个章节开始刷题</view>
+      </view>
+      <view class="tag">{{chapters.length}} 个章节</view>
+    </view>
+
+    <view class="chapter" wx:for="{{chapters}}" wx:key="id" bindtap="startChapter" data-id="{{item.id}}" data-name="{{item.name}}">
+      <view>
+        <view class="chapter-name">{{item.name}}</view>
+        <view class="muted">{{item.questionCount}} 道题</view>
+      </view>
+      <view class="chapter-action">练习</view>
+    </view>
+
+    <view class="muted empty" wx:if="{{!loading && !chapters.length}}">当前题库暂无章节，将按整库练习。</view>
+  </view>
+</view>

@@ -1,0 +1,51 @@
+{
+  "pages": [
+    "pages/login/login",
+    "pages/index/index",
+    "pages/banks/banks",
+    "pages/bank-detail/bank-detail",
+    "pages/exam-config/exam-config",
+    "pages/practice/practice",
+    "pages/practice-result/practice-result",
+    "pages/wrong/wrong",
+    "pages/favorites/favorites",
+    "pages/admin/admin",
+    "pages/admin-home/admin-home",
+    "pages/admin-import/admin-import",
+    "pages/admin-users/admin-users",
+    "pages/admin-stats/admin-stats",
+    "pages/admin-exam-templates/admin-exam-templates",
+    "pages/admin-banks/admin-banks",
+    "pages/admin-questions/admin-questions",
+    "pages/profile/profile"
+  ],
+  "window": {
+    "navigationBarTitleText": "题库小程序",
+    "navigationBarBackgroundColor": "#ffffff",
+    "navigationBarTextStyle": "black",
+    "backgroundColor": "#f6f7fb",
+    "backgroundTextStyle": "dark"
+  },
+  "tabBar": {
+    "color": "#6b7280",
+    "selectedColor": "#2563eb",
+    "backgroundColor": "#ffffff",
+    "borderStyle": "black",
+    "list": [
+      {
+        "pagePath": "pages/index/index",
+        "text": "练习"
+      },
+      {
+        "pagePath": "pages/banks/banks",
+        "text": "题库"
+      },
+      {
+        "pagePath": "pages/profile/profile",
+        "text": "我的"
+      }
+    ]
+  },
+  "style": "v2",
+  "sitemapLocation": "sitemap.json"
+}

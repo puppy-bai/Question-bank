@@ -1,0 +1,57 @@
+<view class="page">
+  <view class="section panel">
+    <view class="row">
+      <view>
+        <view class="name">{{user.name || '未登录用户'}}</view>
+        <view class="muted">{{user.phone || '未填写手机号'}}</view>
+      </view>
+      <view class="tag">用户</view>
+    </view>
+  </view>
+
+  <view class="section stat-grid">
+    <view class="panel stat" bindtap="goMyBanks">
+      <view class="stat-num">{{stats.myBankCount}}</view>
+      <view class="muted">我的题库</view>
+    </view>
+    <view class="panel stat">
+      <view class="stat-num">{{stats.wrongCount}}</view>
+      <view class="muted">错题</view>
+    </view>
+    <view class="panel stat">
+      <view class="stat-num">{{stats.favoriteCount}}</view>
+      <view class="muted">收藏</view>
+    </view>
+  </view>
+
+  <view class="section panel">
+    <view class="item" bindtap="goMyBanks">
+      <view>
+        <view class="item-title">我的题库</view>
+        <view class="muted">查看已加入并可练习的题库</view>
+      </view>
+    </view>
+    <view class="item" bindtap="goStats">
+      <view>
+        <view class="item-title">练习统计</view>
+        <view class="muted">查看练习数量、错题和收藏概览</view>
+      </view>
+    </view>
+    <view class="item" bindtap="goFeedback">
+      <view>
+        <view class="item-title">意见反馈</view>
+        <view class="muted">反馈题目错误、功能建议或使用问题</view>
+      </view>
+    </view>
+    <view class="item" bindtap="manageAccount">
+      <view>
+        <view class="item-title">账号管理</view>
+        <view class="muted">查看当前姓名和手机号</view>
+      </view>
+    </view>
+  </view>
+
+  <view class="section">
+    <button class="button secondary logout" bindtap="logout">退出登录 / 切换登录</button>
+  </view>
+</view>

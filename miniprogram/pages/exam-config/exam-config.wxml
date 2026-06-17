@@ -1,0 +1,45 @@
+<view class="page">
+  <view class="section header">
+    <view class="title">模拟考试</view>
+    <view class="subtitle">{{bank.name || '题库'}} · 提交后统一批卷，满分 100 分</view>
+  </view>
+
+  <view class="section panel">
+    <view class="card-title">组卷方式</view>
+    <view class="mode-row">
+      <view class="mode-chip {{!useCustom ? 'active' : ''}}" data-custom="0" bindtap="switchMode">默认模板</view>
+      <view class="mode-chip {{useCustom ? 'active' : ''}}" data-custom="1" bindtap="switchMode">自定义配比</view>
+    </view>
+    <view class="muted tip" wx:if="{{!useCustom}}">使用管理员为该题库设置的默认题型和章节比例。</view>
+    <view class="muted tip" wx:else>比例会按填写总和自动折算，留空或填 0 表示不强制分配。</view>
+  </view>
+
+  <view class="section panel" wx:if="{{useCustom}}">
+    <view class="card-title">题型比例</view>
+    <view class="field">
+      <view class="label">总题数</view>
+      <input class="input" type="number" value="{{totalQuestions}}" bindinput="onTotalInput" />
+    </view>
+    <view class="field compact" wx:for="{{typeFields}}" wx:key="key">
+      <view class="label">{{item.label}}</view>
+      <input class="input ratio-input" type="number" value="{{item.ratio}}" data-index="{{index}}" bindinput="onTypeRatioInput" />
+    </view>
+  </view>
+
+  <view class="section panel" wx:if="{{useCustom}}">
+    <view class="card-title">章节比例</view>
+    <view class="muted tip">例如每章都填 1 表示平均抽题，只填某几章表示只从这些章节出题。</view>
+    <view class="chapter-field" wx:for="{{chapters}}" wx:key="id">
+      <view>
+        <view class="chapter-name">{{item.name}}</view>
+        <view class="muted">{{item.questionCount}} 道题</view>
+      </view>
+      <input class="input ratio-input" type="number" value="{{item.ratio}}" data-index="{{index}}" bindinput="onChapterRatioInput" />
+    </view>
+    <view class="muted empty" wx:if="{{!chapters.length && !loading}}">当前题库暂无章节，将按整库范围组卷。</view>
+  </view>
+
+  <view class="bottom-bar">
+    <button class="button start" loading="{{loading}}" bindtap="startExam">开始考试</button>
+  </view>
+</view>

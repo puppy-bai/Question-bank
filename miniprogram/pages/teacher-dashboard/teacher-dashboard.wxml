@@ -1,0 +1,46 @@
+<view class="page">
+  <view class="section">
+    <view class="title">老师工作台</view>
+    <view class="subtitle">仅展示当前老师负责班级内的学生练习数据；管理员可查看全部学生。</view>
+  </view>
+
+  <view class="section metrics">
+    <view class="panel metric">
+      <view class="metric-num">{{summary.studentCount}}</view>
+      <view class="muted">学生数</view>
+    </view>
+    <view class="panel metric">
+      <view class="metric-num">{{summary.correctRate}}%</view>
+      <view class="muted">平均正确率</view>
+    </view>
+    <view class="panel metric">
+      <view class="metric-num">{{summary.attempts}}</view>
+      <view class="muted">答题次数</view>
+    </view>
+    <view class="panel metric">
+      <view class="metric-num">{{summary.wrongCount}}</view>
+      <view class="muted">未掌握错题</view>
+    </view>
+  </view>
+
+  <view class="section panel">
+    <view class="card-title">学生概览</view>
+    <view class="student-row" wx:for="{{students}}" wx:key="openid" bindtap="openStudent" data-openid="{{item.openid}}">
+      <view>
+        <view class="student-name">{{item.name}}</view>
+        <view class="muted">{{item.className}} · 答题 {{item.attempts}} 次 · 错题 {{item.wrongCount}}</view>
+      </view>
+      <view class="rate">{{item.correctRate}}%</view>
+    </view>
+    <view class="muted" wx:if="{{!students.length && !loading}}">暂无学生数据，请先配置班级关系或完成练习。</view>
+  </view>
+
+  <view class="section panel">
+    <view class="card-title">高频错题</view>
+    <view class="wrong-row" wx:for="{{hotWrongs}}" wx:key="questionId">
+      <view class="wrong-stem">{{item.stem}}</view>
+      <view class="muted">累计错误 {{item.count}} 次</view>
+    </view>
+    <view class="muted" wx:if="{{!hotWrongs.length}}">暂无高频错题。</view>
+  </view>
+</view>

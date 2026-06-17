@@ -1,0 +1,54 @@
+.metrics {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20rpx;
+}
+
+.metric {
+  min-height: 150rpx;
+}
+
+.metric-num {
+  font-size: 46rpx;
+  font-weight: 800;
+  color: #2563eb;
+  margin-bottom: 12rpx;
+}
+
+.card-title {
+  font-size: 32rpx;
+  font-weight: 700;
+  margin-bottom: 12rpx;
+}
+
+.student-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20rpx;
+  padding: 24rpx 0;
+  border-top: 1rpx solid #e5e7eb;
+}
+
+.student-name {
+  font-weight: 700;
+  margin-bottom: 8rpx;
+}
+
+.rate {
+  min-width: 100rpx;
+  text-align: right;
+  color: #2563eb;
+  font-weight: 800;
+}
+
+.wrong-row {
+  padding: 22rpx 0;
+  border-top: 1rpx solid #e5e7eb;
+}
+
+.wrong-stem {
+  font-weight: 700;
+  line-height: 1.5;
+  margin-bottom: 8rpx;
+}

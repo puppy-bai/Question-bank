@@ -1,0 +1,42 @@
+.stat-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20rpx;
+}
+
+.stat {
+  min-height: 138rpx;
+}
+
+.stat-num {
+  font-size: 46rpx;
+  font-weight: 800;
+  color: #2563eb;
+  margin-bottom: 12rpx;
+}
+
+.menu-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 20rpx;
+}
+
+.menu-card {
+  padding: 28rpx;
+  border-radius: 16rpx;
+  background: #ffffff;
+  border: 1rpx solid #e5e7eb;
+  box-shadow: 0 8rpx 24rpx rgba(15, 23, 42, 0.04);
+}
+
+.menu-title {
+  font-size: 32rpx;
+  font-weight: 800;
+  color: #0f172a;
+  margin-bottom: 10rpx;
+}
+
+.menu-desc {
+  color: #64748b;
+  line-height: 1.5;
+}

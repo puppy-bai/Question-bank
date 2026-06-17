@@ -1,0 +1,26 @@
+<view class="page login-page">
+  <view class="brand">
+    <view class="title">题库小程序</view>
+    <view class="subtitle">登录后加入题库，开始练习、考试和复习。</view>
+  </view>
+
+  <view class="section entry-list">
+    <view class="entry-card user-entry form-card">
+      <view class="entry-title">用户登录 / 注册</view>
+      <view class="entry-desc">首次使用会自动创建账号，后续使用同一微信进入即可。</view>
+      <input class="input" placeholder="请输入姓名" value="{{name}}" bindinput="onNameInput" />
+      <input class="input" type="number" maxlength="11" placeholder="请输入手机号" value="{{phone}}" bindinput="onPhoneInput" />
+      <button class="button login-button" loading="{{loading}}" bindtap="loginUser">进入用户端</button>
+    </view>
+
+    <view class="entry-card admin-entry" bindtap="loginAdmin">
+      <view>
+        <view class="entry-title">管理员登录</view>
+        <view class="entry-desc">导入题库、管理章节题目、查看用户数据。</view>
+      </view>
+      <view class="entry-action secondary">管理</view>
+    </view>
+  </view>
+
+  <view class="section muted center">第三方题库管理与刷题工具</view>
+</view>

@@ -1,0 +1,37 @@
+<view class="page">
+  <view class="section">
+    <view class="title">题库</view>
+    <view class="subtitle">管理员上传的题库会显示在这里，加入后会进入“我的题库”。</view>
+  </view>
+
+  <view class="list">
+    <view class="panel bank" wx:for="{{banks}}" wx:key="id" bindtap="openBank" data-id="{{item.id}}" data-status="{{item.status}}">
+      <view class="row">
+        <view>
+          <view class="bank-title">{{item.name}}</view>
+          <view class="muted">{{item.metaText}}</view>
+        </view>
+        <view class="tag {{item.status === 'importing' ? 'tag-warning' : ''}}">{{item.tagText}}</view>
+      </view>
+      <view class="progress" wx:if="{{item.status !== 'importing'}}">
+        <view class="progress-inner" style="width: {{item.progress}}%;"></view>
+      </view>
+      <view class="bank-actions" wx:if="{{item.status !== 'importing'}}">
+        <button
+          size="mini"
+          class="join-btn {{item.joined ? 'joined' : ''}}"
+          data-id="{{item.id}}"
+          data-status="{{item.status}}"
+          catchtap="joinBank"
+        >
+          {{item.joined ? '已加入我的题库' : '加入我的题库'}}
+        </button>
+      </view>
+    </view>
+  </view>
+
+  <view class="empty panel" wx:if="{{!banks.length}}">
+    <view class="bank-title">暂无可用题库</view>
+    <view class="muted">管理员发布题库后会显示在这里。</view>
+  </view>
+</view>

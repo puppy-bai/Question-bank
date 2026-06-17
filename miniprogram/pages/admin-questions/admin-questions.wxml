@@ -1,0 +1,47 @@
+<view class="page">
+  <view class="section">
+    <view class="title">题目维护</view>
+    <view class="subtitle">用于导入后修正题干、选项、答案和解析；选择题选项按每行一个填写，例如 A. 选项内容。</view>
+  </view>
+
+  <view class="section panel">
+    <view class="card-title">{{form.questionId ? '编辑题目' : '新增题目'}}</view>
+    <picker mode="selector" range="{{bankLabels}}" value="{{selectedBankIndex}}" bindchange="onBankChange">
+      <view class="picker">{{bankLabels[selectedBankIndex] || '选择题库'}}</view>
+    </picker>
+    <picker mode="selector" range="{{typeLabels}}" value="{{typeIndex}}" bindchange="onTypeChange">
+      <view class="picker">题型：{{typeLabels[typeIndex]}}</view>
+    </picker>
+    <picker mode="selector" range="{{statusLabels}}" value="{{statusIndex}}" bindchange="onStatusChange">
+      <view class="picker">状态：{{statusLabels[statusIndex]}}</view>
+    </picker>
+    <picker mode="selector" range="{{chapterPicker}}" range-key="name" value="{{chapterIndex}}" bindchange="onChapterChange">
+      <view class="picker">章节：{{chapterPicker[chapterIndex].name}}</view>
+    </picker>
+
+    <textarea class="textarea stem" placeholder="题干" value="{{form.stem}}" data-field="stem" bindinput="onFieldInput" />
+    <textarea class="textarea" placeholder="共用题干，可选" value="{{form.groupStem}}" data-field="groupStem" bindinput="onFieldInput" />
+    <textarea class="textarea options" wx:if="{{typeIndex === 0 || typeIndex === 1}}" placeholder="A. 选项内容&#10;B. 选项内容" value="{{form.optionsText}}" data-field="optionsText" bindinput="onFieldInput" />
+    <textarea class="textarea answer" placeholder="答案：单选填 A，多选填 AB，判断填 正确/错误，填空每行一个答案" value="{{form.answerText}}" data-field="answerText" bindinput="onFieldInput" />
+    <textarea class="textarea analysis" placeholder="解析，可选" value="{{form.analysis}}" data-field="analysis" bindinput="onFieldInput" />
+
+    <view class="form-actions">
+      <button class="button" loading="{{saving}}" bindtap="saveQuestion">保存题目</button>
+      <button class="button secondary" bindtap="resetForm">新增</button>
+    </view>
+  </view>
+
+  <view class="section panel">
+    <view class="card-title">题目列表</view>
+    <view class="question-row" wx:for="{{questions}}" wx:key="id">
+      <view class="question-main" bindtap="editQuestion" data-id="{{item.id}}">
+        <view class="strong">{{index + 1}}. {{item.stem}}</view>
+        <view class="muted">{{item.chapterName || '默认章节'}} · {{item.typeLabel}} · {{item.statusLabel}}</view>
+      </view>
+      <button class="mini-btn" data-id="{{item.id}}" data-status="{{item.status}}" bindtap="toggleStatus">
+        {{item.status === 'published' ? '下架' : '发布'}}
+      </button>
+    </view>
+    <view class="muted empty" wx:if="{{!questions.length && !loading}}">当前题库暂无题目。</view>
+  </view>
+</view>

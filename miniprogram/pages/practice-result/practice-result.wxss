@@ -1,0 +1,78 @@
+.result-page {
+  padding-bottom: 48rpx;
+}
+
+.result-head {
+  text-align: center;
+  padding-top: 28rpx;
+}
+
+.score-ring {
+  width: 220rpx;
+  height: 220rpx;
+  margin: 42rpx auto 0;
+  border-radius: 50%;
+  background: #ffffff;
+  border: 18rpx solid #dbeafe;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 12rpx 30rpx rgba(37, 99, 235, 0.12);
+}
+
+.score-num {
+  font-size: 54rpx;
+  font-weight: 900;
+  color: #2563eb;
+  line-height: 1;
+  margin-bottom: 10rpx;
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20rpx;
+}
+
+.stat {
+  min-height: 140rpx;
+  text-align: center;
+}
+
+.stat-num {
+  font-size: 48rpx;
+  font-weight: 900;
+  color: #0f172a;
+  margin-bottom: 10rpx;
+}
+
+.stat-num.ok {
+  color: #059669;
+}
+
+.stat-num.bad {
+  color: #dc2626;
+}
+
+.card-title {
+  font-size: 32rpx;
+  font-weight: 700;
+  margin-bottom: 8rpx;
+}
+
+.actions {
+  display: flex;
+  flex-direction: column;
+  gap: 18rpx;
+}
+
+.plain-btn {
+  height: 80rpx;
+  line-height: 80rpx;
+  border-radius: 12rpx;
+  background: #ffffff;
+  color: #334155;
+  font-size: 28rpx;
+  border: 1rpx solid #e5e7eb;
+}

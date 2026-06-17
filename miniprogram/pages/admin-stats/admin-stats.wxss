@@ -1,0 +1,123 @@
+.metrics {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18rpx;
+}
+
+.metric {
+  min-height: 132rpx;
+}
+
+.metric-num {
+  font-size: 42rpx;
+  font-weight: 800;
+  color: #2563eb;
+  margin-bottom: 10rpx;
+}
+
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
+  margin-bottom: 18rpx;
+}
+
+.card-title {
+  font-size: 32rpx;
+  font-weight: 700;
+}
+
+.rank-row,
+.type-row,
+.wrong-row,
+.attempt-row {
+  padding: 22rpx 0;
+  border-top: 1rpx solid #e5e7eb;
+}
+
+.rank-row,
+.type-row,
+.attempt-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18rpx;
+}
+
+.rank-main {
+  flex: 1;
+}
+
+.rank-index {
+  width: 44rpx;
+  height: 44rpx;
+  border-radius: 50%;
+  background: #eff6ff;
+  color: #2563eb;
+  text-align: center;
+  line-height: 44rpx;
+  font-size: 24rpx;
+  font-weight: 700;
+  flex: 0 0 44rpx;
+}
+
+.strong {
+  font-weight: 700;
+  line-height: 1.5;
+}
+
+.rate {
+  font-size: 32rpx;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.wrong-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12rpx;
+  margin-top: 14rpx;
+}
+
+.stat-chip {
+  min-height: 48rpx;
+  padding: 0 16rpx;
+  border-radius: 999rpx;
+  background: #f1f5f9;
+  color: #334155;
+  line-height: 48rpx;
+  font-size: 24rpx;
+  box-sizing: border-box;
+}
+
+.stat-chip.bad {
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
+.result {
+  min-width: 88rpx;
+  height: 48rpx;
+  padding: 0 16rpx;
+  border-radius: 999rpx;
+  line-height: 48rpx;
+  text-align: center;
+  font-size: 24rpx;
+  font-weight: 700;
+  box-sizing: border-box;
+}
+
+.result.ok {
+  background: #dcfce7;
+  color: #047857;
+}
+
+.result.bad {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.empty {
+  padding: 18rpx 0 4rpx;
+}

@@ -1,0 +1,44 @@
+<view class="page">
+  <view class="section">
+    <view class="title">管理后台</view>
+    <view class="subtitle">管理题库、章节题目、导入任务和用户使用数据。</view>
+  </view>
+
+  <view class="section stat-grid">
+    <view class="panel stat">
+      <view class="stat-num">{{stats.bankCount}}</view>
+      <view class="muted">题库数</view>
+    </view>
+    <view class="panel stat">
+      <view class="stat-num">{{stats.questionCount}}</view>
+      <view class="muted">题目数</view>
+    </view>
+  </view>
+
+  <view class="section menu-grid">
+    <view class="menu-card" bindtap="goBanks">
+      <view class="menu-title">题库管理</view>
+      <view class="menu-desc">发布、下架、重命名、删除题库</view>
+    </view>
+    <view class="menu-card" bindtap="goImport">
+      <view class="menu-title">Word 导入</view>
+      <view class="menu-desc">上传模板文件并分批导入题目</view>
+    </view>
+    <view class="menu-card" bindtap="goQuestions">
+      <view class="menu-title">题目管理</view>
+      <view class="menu-desc">维护章节、题型、答案和解析</view>
+    </view>
+    <view class="menu-card" bindtap="goExamTemplates">
+      <view class="menu-title">考试模板</view>
+      <view class="menu-desc">配置模拟考试题数与题型比例</view>
+    </view>
+    <view class="menu-card" bindtap="goUsers">
+      <view class="menu-title">用户管理</view>
+      <view class="menu-desc">查看用户、备注用户和使用情况</view>
+    </view>
+    <view class="menu-card" bindtap="goStats">
+      <view class="menu-title">数据统计</view>
+      <view class="menu-desc">题库使用、正确率和高频错题</view>
+    </view>
+  </view>
+</view>

@@ -1,0 +1,85 @@
+.metrics {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18rpx;
+}
+
+.metric {
+  min-height: 132rpx;
+}
+
+.metric-num {
+  font-size: 42rpx;
+  font-weight: 800;
+  color: #2563eb;
+  margin-bottom: 10rpx;
+}
+
+.card-title {
+  font-size: 32rpx;
+  font-weight: 700;
+  margin-bottom: 18rpx;
+}
+
+.input,
+.picker {
+  min-height: 88rpx;
+  margin-top: 18rpx;
+  padding: 0 22rpx;
+  border-radius: 12rpx;
+  border: 2rpx solid #e5e7eb;
+  box-sizing: border-box;
+  background: #ffffff;
+  line-height: 88rpx;
+}
+
+.form-actions {
+  display: grid;
+  grid-template-columns: 1fr 160rpx;
+  gap: 18rpx;
+  margin-top: 22rpx;
+}
+
+.user-row {
+  padding: 24rpx 0;
+  border-top: 1rpx solid #e5e7eb;
+}
+
+.user-main {
+  margin-bottom: 16rpx;
+}
+
+.strong {
+  font-weight: 700;
+  line-height: 1.5;
+}
+
+.small {
+  margin-left: 12rpx;
+  font-size: 20rpx;
+}
+
+.user-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12rpx;
+}
+
+.stat-chip {
+  height: 48rpx;
+  padding: 0 16rpx;
+  border-radius: 999rpx;
+  background: #f1f5f9;
+  color: #334155;
+  line-height: 48rpx;
+  font-size: 24rpx;
+}
+
+.stat-chip.bad {
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
+.empty {
+  padding: 18rpx 0 4rpx;
+}

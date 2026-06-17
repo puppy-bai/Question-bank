@@ -1,0 +1,150 @@
+.header {
+  padding-top: 16rpx;
+}
+
+.stat-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18rpx;
+}
+
+.stat {
+  min-height: 126rpx;
+  position: relative;
+  overflow: hidden;
+  border: 0;
+  box-shadow: 0 10rpx 30rpx rgba(15, 23, 42, 0.06);
+}
+
+.stat-num {
+  font-size: 48rpx;
+  font-weight: 800;
+  color: #2563eb;
+  margin-bottom: 8rpx;
+}
+
+.stat-num.bad {
+  color: #dc2626;
+}
+
+.mode-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16rpx;
+}
+
+.mode-card {
+  min-height: 138rpx;
+  padding: 20rpx 22rpx;
+  border-radius: 18rpx;
+  background: #ffffff;
+  border: 2rpx solid #e5e7eb;
+  box-sizing: border-box;
+  box-shadow: 0 8rpx 24rpx rgba(15, 23, 42, 0.04);
+}
+
+.mode-card.active {
+  border-color: #2563eb;
+  background: #f8fbff;
+  box-shadow: 0 12rpx 34rpx rgba(37, 99, 235, 0.12);
+}
+
+.mode-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 18rpx;
+}
+
+.mode-index {
+  color: #94a3b8;
+  font-size: 22rpx;
+  font-weight: 800;
+}
+
+.mode-check {
+  width: 18rpx;
+  height: 18rpx;
+  border-radius: 50%;
+  background: #e5e7eb;
+}
+
+.mode-check.active {
+  background: #2563eb;
+}
+
+.mode-title {
+  font-size: 30rpx;
+  font-weight: 800;
+  color: #0f172a;
+  line-height: 1.25;
+}
+
+.card-title {
+  font-size: 32rpx;
+  font-weight: 700;
+  color: #111827;
+  margin-bottom: 8rpx;
+}
+
+.small-button {
+  min-width: 136rpx;
+  padding: 0 18rpx;
+}
+
+.type-row {
+  display: flex;
+  gap: 16rpx;
+  margin-top: 18rpx;
+}
+
+.type-chip {
+  min-width: 120rpx;
+  height: 64rpx;
+  padding: 0 20rpx;
+  border-radius: 999rpx;
+  background: #f1f5f9;
+  color: #334155;
+  line-height: 64rpx;
+  text-align: center;
+  box-sizing: border-box;
+}
+
+.type-chip.active {
+  background: #2563eb;
+  color: #ffffff;
+  font-weight: 700;
+}
+
+.bank-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18rpx;
+  padding: 26rpx 0;
+  border-top: 1rpx solid #e5e7eb;
+}
+
+.bank-title {
+  font-size: 30rpx;
+  font-weight: 700;
+  color: #111827;
+  margin-bottom: 8rpx;
+}
+
+.bank-action {
+  min-width: 88rpx;
+  height: 52rpx;
+  border-radius: 12rpx;
+  background: #2563eb;
+  color: #ffffff;
+  line-height: 52rpx;
+  text-align: center;
+  font-weight: 700;
+  font-size: 24rpx;
+}
+
+.empty {
+  padding: 28rpx 0 6rpx;
+  text-align: center;
+}
