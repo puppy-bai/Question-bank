@@ -57,6 +57,7 @@ function App() {
   const [snapshot, setSnapshot] = useState(store.snapshot());
   const [screen, setScreen] = useState(snapshot.currentUser?.role === 'admin' ? 'admin' : snapshot.currentUser ? 'app' : 'login');
   const [roleTab, setRoleTab] = useState('user');
+  const [userAuthMode, setUserAuthMode] = useState('login');
   const [activeTab, setActiveTab] = useState('practice');
   const [adminTab, setAdminTab] = useState('banks');
   const [selectedMode, setSelectedMode] = useState('sequence');
@@ -82,14 +83,34 @@ function App() {
 
   async function loginUser() {
     if (!loginForm.name.trim() || !loginForm.phone.trim()) {
-      alert('请输入姓名和手机号');
+      alert('\u8bf7\u8f93\u5165\u59d3\u540d\u548c\u624b\u673a\u53f7');
       return;
     }
-    await store.loginUser(loginForm.name.trim(), loginForm.phone.trim());
-    refresh();
-    setScreen('app');
-    setActiveTab('practice');
+    try {
+      await store.loginUser(loginForm.name.trim(), loginForm.phone.trim());
+      refresh();
+      setScreen('app');
+      setActiveTab('practice');
+    } catch (error) {
+      alert(error.message || '\u767b\u5f55\u5931\u8d25');
+    }
   }
+
+  async function registerUser() {
+    if (!loginForm.name.trim() || !loginForm.phone.trim()) {
+      alert('\u8bf7\u8f93\u5165\u59d3\u540d\u548c\u624b\u673a\u53f7');
+      return;
+    }
+    try {
+      await store.registerUser(loginForm.name.trim(), loginForm.phone.trim());
+      refresh();
+      setScreen('app');
+      setActiveTab('practice');
+    } catch (error) {
+      alert(error.message || '\u6ce8\u518c\u5931\u8d25');
+    }
+  }
+
 
   async function loginAdmin() {
     try {
@@ -190,9 +211,16 @@ function App() {
 
           {roleTab === 'user' ? (
             <div className="form-stack">
+              <div className="segmented inline">
+                <button className={userAuthMode === 'login' ? 'active' : ''} onClick={() => setUserAuthMode('login')}>登录</button>
+                <button className={userAuthMode === 'register' ? 'active' : ''} onClick={() => setUserAuthMode('register')}>注册</button>
+              </div>
               <input placeholder="姓名" value={loginForm.name} onChange={(event) => setLoginForm({ ...loginForm, name: event.target.value })} />
               <input placeholder="手机号" value={loginForm.phone} onChange={(event) => setLoginForm({ ...loginForm, phone: event.target.value })} />
-              <button className="primary-btn" onClick={loginUser}>进入用户端</button>
+              <button className="primary-btn" onClick={userAuthMode === 'login' ? loginUser : registerUser}>
+                {userAuthMode === 'login' ? '登录并进入用户端' : '注册并进入用户端'}
+              </button>
+              <p className="tiny">{userAuthMode === 'login' ? '已注册用户使用姓名和手机号登录。' : '首次使用请先注册；一个手机号对应一个独立用户。'}</p>
             </div>
           ) : (
             <div className="form-stack">

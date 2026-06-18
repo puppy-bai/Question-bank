@@ -38,6 +38,7 @@ export function createApiClient(options = {}) {
       localStorage.removeItem('question_bank_admin_token');
     },
     health: () => request('/api/health', { method: 'GET' }),
+    registerUser: (name, phone) => request('/api/auth/register', { method: 'POST', body: JSON.stringify({ name, phone }) }),
     loginUser: (name, phone) => request('/api/auth/login', { method: 'POST', body: JSON.stringify({ name, phone }) }),
     loginAdmin: (password) => request('/api/admin/login', { method: 'POST', body: JSON.stringify({ password }) }),
     listBanks: () => request('/api/banks', { method: 'GET' }),

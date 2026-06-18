@@ -12,6 +12,7 @@ export default {
       const route = `${request.method} ${url.pathname}`;
 
       if (route === 'GET /api/health') return ok({ ok: true, service: 'question-bank-api', requestId }, env);
+      if (route === 'POST /api/auth/register') return register(request, env);
       if (route === 'POST /api/auth/login') return login(request, env);
       if (route === 'POST /api/admin/login') return adminLogin(request, env);
       if (route === 'GET /api/banks') return listBanks(request, env);
@@ -24,30 +25,40 @@ export default {
 
       return fail('接口不存在', 404, env, { requestId });
     } catch (error) {
+      if (error instanceof HttpError) return fail(error.message, error.status, env, { requestId });
       ctx.waitUntil(logError(error, requestId));
       return fail('服务器处理失败', 500, env, { requestId });
     }
   }
 };
 
+async function register(request, env) {
+  const body = await readJson(request);
+  const name = String(body.name || '').trim();
+  const phone = String(body.phone || '').trim();
+  if (!name || !phone) return fail('\u8bf7\u8f93\u5165\u59d3\u540d\u548c\u624b\u673a\u53f7', 400, env);
+
+  const existing = await env.DB.prepare('SELECT * FROM users WHERE phone = ? AND role = ?').bind(phone, 'user').first();
+  if (existing) return fail('\u8be5\u624b\u673a\u53f7\u5df2\u6ce8\u518c\uff0c\u8bf7\u76f4\u63a5\u767b\u5f55', 409, env);
+
+  const timestamp = now();
+  const user = { id: id('user'), role: 'user', name, phone, created_at: timestamp, updated_at: timestamp };
+  await env.DB.prepare('INSERT INTO users (id, role, name, phone, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)')
+    .bind(user.id, user.role, user.name, user.phone, timestamp, timestamp)
+    .run();
+
+  return ok({ user, token: makeSessionToken(user) }, env);
+}
+
 async function login(request, env) {
   const body = await readJson(request);
   const name = String(body.name || '').trim();
   const phone = String(body.phone || '').trim();
-  if (!name || !phone) return fail('请输入姓名和手机号', 400, env);
+  if (!name || !phone) return fail('\u8bf7\u8f93\u5165\u59d3\u540d\u548c\u624b\u673a\u53f7', 400, env);
 
-  const existing = await env.DB.prepare('SELECT * FROM users WHERE phone = ? AND role = ?').bind(phone, 'user').first();
-  const timestamp = now();
-  let user = existing;
-  if (!user) {
-    user = { id: id('user'), role: 'user', name, phone, created_at: timestamp, updated_at: timestamp };
-    await env.DB.prepare('INSERT INTO users (id, role, name, phone, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)')
-      .bind(user.id, user.role, user.name, user.phone, timestamp, timestamp)
-      .run();
-  } else {
-    await env.DB.prepare('UPDATE users SET name = ?, updated_at = ? WHERE id = ?').bind(name, timestamp, existing.id).run();
-    user = { ...existing, name, updated_at: timestamp };
-  }
+  const user = await env.DB.prepare('SELECT * FROM users WHERE phone = ? AND role = ?').bind(phone, 'user').first();
+  if (!user) return fail('\u8d26\u53f7\u4e0d\u5b58\u5728\uff0c\u8bf7\u5148\u6ce8\u518c', 404, env);
+  if (String(user.name || '').trim() !== name) return fail('\u59d3\u540d\u548c\u624b\u673a\u53f7\u4e0d\u5339\u914d', 401, env);
 
   return ok({ user, token: makeSessionToken(user) }, env);
 }

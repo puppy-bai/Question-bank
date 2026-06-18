@@ -154,17 +154,24 @@ export function createStore() {
         })))
       };
     },
+    registerUser(name, phone) {
+      const cleanName = String(name || '').trim();
+      const cleanPhone = String(phone || '').trim();
+      const existing = state.users.find((item) => item.phone === cleanPhone && item.role === 'user');
+      if (existing) throw new Error('该手机号已注册，请直接登录');
+      const user = { id: id('user'), role: 'user', name: cleanName, phone: cleanPhone, createdAt: now() };
+      state.users.push(user);
+      ensureUserBuckets(user.id);
+      state.currentUserId = user.id;
+      save();
+      return user;
+    },
     loginUser(name, phone) {
       const cleanName = String(name || '').trim();
       const cleanPhone = String(phone || '').trim();
-      let user = state.users.find((item) => item.phone === cleanPhone && item.role === 'user');
-      if (!user) {
-        user = { id: id('user'), role: 'user', name: cleanName, phone: cleanPhone, createdAt: now() };
-        state.users.push(user);
-      } else {
-        user.name = cleanName;
-        user.updatedAt = now();
-      }
+      const user = state.users.find((item) => item.phone === cleanPhone && item.role === 'user');
+      if (!user) throw new Error('账号不存在，请先注册');
+      if (String(user.name || '').trim() !== cleanName) throw new Error('姓名和手机号不匹配');
       ensureUserBuckets(user.id);
       state.currentUserId = user.id;
       save();
