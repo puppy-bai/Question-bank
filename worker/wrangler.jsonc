@@ -1,22 +1,28 @@
 {
-  "$schema": "./node_modules/wrangler/config-schema.json",
-  "name": "question-bank-api",
-  "main": "src/index.js",
-  "compatibility_date": "2026-06-18",
-  "observability": {
-    "enabled": true,
-    "head_sampling_rate": 1
-  },
-  "vars": {
-    "ENVIRONMENT": "production",
-    "CORS_ORIGIN": "*"
-  },
-  "d1_databases": [
-    {
-      "binding": "DB",
-      "database_name": "question-bank-db",
-      "database_id": "REPLACE_WITH_D1_DATABASE_ID",
-      "migrations_dir": "migrations"
-    }
-  ]
+	"$schema": "./node_modules/wrangler/config-schema.json",
+	"name": "question-bank-api",
+	"main": "src/index.js",
+	"compatibility_date": "2026-06-18",
+	"observability": {
+		"enabled": true,
+		"head_sampling_rate": 1
+	},
+	"vars": {
+		"ENVIRONMENT": "production",
+		"CORS_ORIGIN": "*"
+	},
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "question-bank-db",
+			"database_id": "c64c0dfc-f4cd-4f67-baa9-3d5d9b8bea76",
+			"migrations_dir": "migrations"
+		},
+		{
+			"binding": "question_bank_db",
+			"database_name": "question-bank-db",
+			"database_id": "c64c0dfc-f4cd-4f67-baa9-3d5d9b8bea76",
+			"remote": true
+		}
+	]
 }
