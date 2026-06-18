@@ -1,0 +1,22 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "question-bank-api",
+  "main": "src/index.js",
+  "compatibility_date": "2026-06-18",
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
+  },
+  "vars": {
+    "ENVIRONMENT": "production",
+    "CORS_ORIGIN": "*"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "question-bank-db",
+      "database_id": "REPLACE_WITH_D1_DATABASE_ID",
+      "migrations_dir": "migrations"
+    }
+  ]
+}

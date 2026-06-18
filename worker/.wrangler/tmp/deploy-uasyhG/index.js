@@ -1,0 +1,282 @@
+var __defProp = Object.defineProperty;
+var __name = (target, value) => __defProp(target, "name", { value, configurable: true });
+
+// src/index.js
+var jsonHeaders = {
+  "content-type": "application/json; charset=utf-8"
+};
+var index_default = {
+  async fetch(request, env, ctx) {
+    const requestId = crypto.randomUUID();
+    try {
+      if (request.method === "OPTIONS") return withCors(new Response(null, { status: 204 }), env);
+      const url = new URL(request.url);
+      const route = `${request.method} ${url.pathname}`;
+      if (route === "GET /api/health") return ok({ ok: true, service: "question-bank-api", requestId }, env);
+      if (route === "POST /api/auth/login") return login(request, env);
+      if (route === "POST /api/admin/login") return adminLogin(request, env);
+      if (route === "GET /api/banks") return listBanks(request, env);
+      if (route === "GET /api/questions") return listQuestions(request, env);
+      if (route === "POST /api/user-banks/join") return joinBank(request, env);
+      if (route === "POST /api/answers") return submitAnswer(request, env);
+      if (route === "POST /api/favorites/toggle") return toggleFavorite(request, env);
+      if (route === "POST /api/admin/import-bank") return importBank(request, env);
+      if (route === "POST /api/admin/activation-codes") return createActivationCodes(request, env);
+      return fail("\u63A5\u53E3\u4E0D\u5B58\u5728", 404, env, { requestId });
+    } catch (error) {
+      ctx.waitUntil(logError(error, requestId));
+      return fail("\u670D\u52A1\u5668\u5904\u7406\u5931\u8D25", 500, env, { requestId });
+    }
+  }
+};
+async function login(request, env) {
+  const body = await readJson(request);
+  const name = String(body.name || "").trim();
+  const phone = String(body.phone || "").trim();
+  if (!name || !phone) return fail("\u8BF7\u8F93\u5165\u59D3\u540D\u548C\u624B\u673A\u53F7", 400, env);
+  const existing = await env.DB.prepare("SELECT * FROM users WHERE phone = ? AND role = ?").bind(phone, "user").first();
+  const timestamp = now();
+  let user = existing;
+  if (!user) {
+    user = { id: id("user"), role: "user", name, phone, created_at: timestamp, updated_at: timestamp };
+    await env.DB.prepare("INSERT INTO users (id, role, name, phone, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)").bind(user.id, user.role, user.name, user.phone, timestamp, timestamp).run();
+  } else {
+    await env.DB.prepare("UPDATE users SET name = ?, updated_at = ? WHERE id = ?").bind(name, timestamp, existing.id).run();
+    user = { ...existing, name, updated_at: timestamp };
+  }
+  return ok({ user, token: makeSessionToken(user) }, env);
+}
+__name(login, "login");
+async function adminLogin(request, env) {
+  const body = await readJson(request);
+  const password = String(body.password || "");
+  const expected = env.ADMIN_PASSWORD || "admin123";
+  if (password !== expected) return fail("\u7BA1\u7406\u5458\u5BC6\u7801\u9519\u8BEF", 401, env);
+  const admin = await env.DB.prepare("SELECT * FROM users WHERE role = ? LIMIT 1").bind("admin").first();
+  return ok({ user: admin || { id: "admin-default", role: "admin", name: "\u7BA1\u7406\u5458", phone: "admin" }, token: "admin-demo-token" }, env);
+}
+__name(adminLogin, "adminLogin");
+async function listBanks(request, env) {
+  const userId = getUserId(request);
+  const banks = await env.DB.prepare(`
+    SELECT b.*,
+      COUNT(DISTINCT c.id) AS chapter_count,
+      COUNT(DISTINCT q.id) AS question_count,
+      CASE WHEN ub.user_id IS NULL THEN 0 ELSE 1 END AS joined
+    FROM banks b
+    LEFT JOIN chapters c ON c.bank_id = b.id
+    LEFT JOIN questions q ON q.bank_id = b.id
+    LEFT JOIN user_banks ub ON ub.bank_id = b.id AND ub.user_id = ?
+    GROUP BY b.id
+    ORDER BY b.created_at DESC
+  `).bind(userId || "").all();
+  return ok({ banks: banks.results || [] }, env);
+}
+__name(listBanks, "listBanks");
+async function listQuestions(request, env) {
+  const url = new URL(request.url);
+  const bankId = url.searchParams.get("bankId");
+  if (!bankId) return fail("\u7F3A\u5C11 bankId", 400, env);
+  const rows = await env.DB.prepare("SELECT * FROM questions WHERE bank_id = ? ORDER BY sort_order ASC, created_at ASC").bind(bankId).all();
+  return ok({ questions: (rows.results || []).map(readQuestionRow) }, env);
+}
+__name(listQuestions, "listQuestions");
+async function joinBank(request, env) {
+  const userId = requireUserId(request);
+  const body = await readJson(request);
+  const bankId = String(body.bankId || "").trim();
+  if (!bankId) return fail("\u7F3A\u5C11\u9898\u5E93 ID", 400, env);
+  await env.DB.prepare("INSERT OR IGNORE INTO user_banks (user_id, bank_id, created_at) VALUES (?, ?, ?)").bind(userId, bankId, now()).run();
+  return ok({ ok: true }, env);
+}
+__name(joinBank, "joinBank");
+async function submitAnswer(request, env) {
+  const userId = requireUserId(request);
+  const body = await readJson(request);
+  const questionId = String(body.questionId || "").trim();
+  const answer = normalizeAnswer(body.answer || []);
+  const question = await env.DB.prepare("SELECT * FROM questions WHERE id = ?").bind(questionId).first();
+  if (!question) return fail("\u9898\u76EE\u4E0D\u5B58\u5728", 404, env);
+  const expected = normalizeAnswer(JSON.parse(question.answer_json || "[]"));
+  const correct = answer.length === expected.length && answer.every((item, index) => item === expected[index]);
+  const timestamp = now();
+  await env.DB.prepare(`
+    INSERT INTO attempts (id, user_id, bank_id, question_id, answer_json, correct, source, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).bind(id("attempt"), userId, question.bank_id, question.id, JSON.stringify(answer), correct ? 1 : 0, body.source || "practice", timestamp).run();
+  if (!correct) {
+    await env.DB.prepare(`
+      INSERT INTO wrong_questions (user_id, question_id, bank_id, chapter_id, last_answer_json, resolved_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, NULL, ?)
+      ON CONFLICT(user_id, question_id) DO UPDATE SET last_answer_json = excluded.last_answer_json, resolved_at = NULL, updated_at = excluded.updated_at
+    `).bind(userId, question.id, question.bank_id, question.chapter_id, JSON.stringify(answer), timestamp).run();
+  }
+  return ok({ correct, answer: expected, answerText: question.answer_text, analysis: question.analysis }, env);
+}
+__name(submitAnswer, "submitAnswer");
+async function toggleFavorite(request, env) {
+  const userId = requireUserId(request);
+  const body = await readJson(request);
+  const questionId = String(body.questionId || "").trim();
+  const question = await env.DB.prepare("SELECT * FROM questions WHERE id = ?").bind(questionId).first();
+  if (!question) return fail("\u9898\u76EE\u4E0D\u5B58\u5728", 404, env);
+  const existing = await env.DB.prepare("SELECT question_id FROM favorites WHERE user_id = ? AND question_id = ?").bind(userId, questionId).first();
+  if (existing) {
+    await env.DB.prepare("DELETE FROM favorites WHERE user_id = ? AND question_id = ?").bind(userId, questionId).run();
+    return ok({ favorite: false }, env);
+  }
+  await env.DB.prepare("INSERT INTO favorites (user_id, question_id, bank_id, created_at) VALUES (?, ?, ?, ?)").bind(userId, questionId, question.bank_id, now()).run();
+  return ok({ favorite: true }, env);
+}
+__name(toggleFavorite, "toggleFavorite");
+async function importBank(request, env) {
+  requireAdmin(request);
+  const body = await readJson(request);
+  const bank = body.bank || {};
+  const chapters = Array.isArray(body.chapters) ? body.chapters : [];
+  const questions = Array.isArray(body.questions) ? body.questions : [];
+  if (!bank.name || !questions.length) return fail("\u9898\u5E93\u540D\u79F0\u548C\u9898\u76EE\u4E0D\u80FD\u4E3A\u7A7A", 400, env);
+  const timestamp = now();
+  const bankId = id("bank");
+  const chapterMap = /* @__PURE__ */ new Map();
+  const statements = [
+    env.DB.prepare(`
+      INSERT INTO banks (id, name, description, status, access_type, price, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(bankId, bank.name, bank.description || "", bank.status || "published", bank.accessType || "free", Number(bank.price) || 0, timestamp, timestamp)
+  ];
+  const chapterNames = [...new Set([...chapters.map((item) => item.name), ...questions.map((item) => item.chapterName || "\u9ED8\u8BA4\u7AE0\u8282")].filter(Boolean))];
+  chapterNames.forEach((name, index) => {
+    const chapterId = id("ch");
+    chapterMap.set(name, chapterId);
+    statements.push(env.DB.prepare("INSERT INTO chapters (id, bank_id, name, sort_order, created_at) VALUES (?, ?, ?, ?, ?)").bind(chapterId, bankId, name, index + 1, timestamp));
+  });
+  questions.forEach((question, index) => {
+    const chapterName = question.chapterName || chapterNames[0] || "\u9ED8\u8BA4\u7AE0\u8282";
+    const answer = normalizeAnswer(question.answer || []);
+    statements.push(env.DB.prepare(`
+      INSERT INTO questions (id, bank_id, chapter_id, type, stem, options_json, answer_json, answer_text, analysis, sort_order, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      id("q"),
+      bankId,
+      chapterMap.get(chapterName),
+      question.type || "single",
+      question.stem,
+      JSON.stringify(question.options || []),
+      JSON.stringify(answer),
+      answer.join("\u3001"),
+      question.analysis || "",
+      index + 1,
+      timestamp
+    ));
+  });
+  await env.DB.batch(statements);
+  return ok({ ok: true, bankId, count: questions.length }, env);
+}
+__name(importBank, "importBank");
+async function createActivationCodes(request, env) {
+  requireAdmin(request);
+  const body = await readJson(request);
+  const planId = String(body.planId || "").trim();
+  const count = Math.min(Math.max(Number(body.count) || 1, 1), 500);
+  const plan = await env.DB.prepare("SELECT * FROM plans WHERE id = ?").bind(planId).first();
+  if (!plan) return fail("\u5957\u9910\u4E0D\u5B58\u5728", 404, env);
+  const timestamp = now();
+  const codes = Array.from({ length: count }, () => ({ id: id("code"), code: makeCode(), planId, createdAt: timestamp }));
+  await env.DB.batch(codes.map((item) => env.DB.prepare("INSERT INTO activation_codes (id, code, plan_id, created_at) VALUES (?, ?, ?, ?)").bind(item.id, item.code, item.planId, item.createdAt)));
+  return ok({ codes }, env);
+}
+__name(createActivationCodes, "createActivationCodes");
+function readQuestionRow(row) {
+  return {
+    id: row.id,
+    bankId: row.bank_id,
+    chapterId: row.chapter_id,
+    type: row.type,
+    stem: row.stem,
+    options: JSON.parse(row.options_json || "[]"),
+    answer: JSON.parse(row.answer_json || "[]"),
+    answerText: row.answer_text,
+    analysis: row.analysis,
+    sortOrder: row.sort_order
+  };
+}
+__name(readQuestionRow, "readQuestionRow");
+async function readJson(request) {
+  if (!request.headers.get("content-type")?.includes("application/json")) return {};
+  return request.json();
+}
+__name(readJson, "readJson");
+function ok(data, env) {
+  return withCors(Response.json(data, { headers: jsonHeaders }), env);
+}
+__name(ok, "ok");
+function fail(message, status, env, extra = {}) {
+  return withCors(Response.json({ ok: false, message, ...extra }, { status, headers: jsonHeaders }), env);
+}
+__name(fail, "fail");
+function withCors(response, env) {
+  const headers = new Headers(response.headers);
+  headers.set("access-control-allow-origin", env.CORS_ORIGIN || "*");
+  headers.set("access-control-allow-methods", "GET,POST,OPTIONS");
+  headers.set("access-control-allow-headers", "content-type,authorization,x-user-id,x-admin-token");
+  return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+}
+__name(withCors, "withCors");
+function getUserId(request) {
+  return request.headers.get("x-user-id") || "";
+}
+__name(getUserId, "getUserId");
+function requireUserId(request) {
+  const userId = getUserId(request);
+  if (!userId) throw new HttpError("\u8BF7\u5148\u767B\u5F55", 401);
+  return userId;
+}
+__name(requireUserId, "requireUserId");
+function requireAdmin(request) {
+  const token = request.headers.get("x-admin-token");
+  if (token !== "admin-demo-token") throw new HttpError("\u6CA1\u6709\u7BA1\u7406\u5458\u6743\u9650", 401);
+}
+__name(requireAdmin, "requireAdmin");
+function normalizeAnswer(answer) {
+  const list = Array.isArray(answer) ? answer : [answer];
+  return list.map((item) => String(item || "").trim().toUpperCase()).filter(Boolean).sort();
+}
+__name(normalizeAnswer, "normalizeAnswer");
+function makeSessionToken(user) {
+  return `demo.${user.id}.${Date.now()}`;
+}
+__name(makeSessionToken, "makeSessionToken");
+function makeCode() {
+  const bytes = new Uint8Array(8);
+  crypto.getRandomValues(bytes);
+  const text = [...bytes].map((byte) => byte.toString(36).padStart(2, "0")).join("").slice(0, 8).toUpperCase();
+  return `QB-${text.slice(0, 4)}-${text.slice(4, 8)}`;
+}
+__name(makeCode, "makeCode");
+function id(prefix) {
+  return `${prefix}-${crypto.randomUUID()}`;
+}
+__name(id, "id");
+function now() {
+  return Date.now();
+}
+__name(now, "now");
+async function logError(error, requestId) {
+  console.error(JSON.stringify({ level: "error", requestId, message: error.message, stack: error.stack }));
+}
+__name(logError, "logError");
+var HttpError = class extends Error {
+  static {
+    __name(this, "HttpError");
+  }
+  constructor(message, status) {
+    super(message);
+    this.status = status;
+  }
+};
+export {
+  index_default as default
+};
+//# sourceMappingURL=index.js.map
