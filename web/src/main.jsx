@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import JSZip from 'jszip';
 import {
@@ -29,9 +29,11 @@ import {
   XCircle
 } from 'lucide-react';
 import { createStore, defaultExamTemplate, parseQuestionsFromText } from './store.js';
+import { createCloudflareStore } from './store-cloudflare.js';
 import './styles.css';
 
-const store = createStore();
+const useCloudflare = import.meta.env.VITE_USE_CLOUDFLARE === 'true';
+const store = useCloudflare ? createCloudflareStore() : createStore();
 
 const practiceModes = [
   { key: 'sequence', title: '顺序练习', icon: BookOpen },
@@ -63,26 +65,41 @@ function App() {
   const [practice, setPractice] = useState(null);
   const [examConfig, setExamConfig] = useState(null);
   const [loginForm, setLoginForm] = useState({ name: '', phone: '', password: '' });
+  const [loading, setLoading] = useState(useCloudflare);
 
   const refresh = () => setSnapshot(store.snapshot());
   const currentUser = snapshot.currentUser;
   const joinedBanks = snapshot.banks.filter((bank) => snapshot.userBankIds.includes(bank.id));
   const publishedBanks = snapshot.banks.filter((bank) => bank.status === 'published');
 
-  function loginUser() {
+  useEffect(() => {
+    if (!store.bootstrap) return;
+    store.bootstrap()
+      .then(() => refresh())
+      .catch((error) => alert(`连接后端失败：${error.message}`))
+      .finally(() => setLoading(false));
+  }, []);
+
+  async function loginUser() {
     if (!loginForm.name.trim() || !loginForm.phone.trim()) {
       alert('请输入姓名和手机号');
       return;
     }
-    store.loginUser(loginForm.name.trim(), loginForm.phone.trim());
+    await store.loginUser(loginForm.name.trim(), loginForm.phone.trim());
     refresh();
     setScreen('app');
     setActiveTab('practice');
   }
 
-  function loginAdmin() {
-    if (!store.loginAdmin(loginForm.password.trim())) {
-      alert('管理员密码错误，默认演示密码为 admin123');
+  async function loginAdmin() {
+    try {
+      const ok = await store.loginAdmin(loginForm.password.trim());
+      if (!ok) {
+        alert('管理员密码错误，默认演示密码为 admin123');
+        return;
+      }
+    } catch (error) {
+      alert(error.message || '管理员登录失败');
       return;
     }
     refresh();
@@ -96,7 +113,7 @@ function App() {
     setPractice(null);
   }
 
-  function startMode(bank, mode = selectedMode, extra = {}) {
+  async function startMode(bank, mode = selectedMode, extra = {}) {
     if (!bank) return;
     if (!store.hasAccess(bank.id)) {
       alert('该题库需要购买或使用激活码解锁');
@@ -104,7 +121,7 @@ function App() {
       return;
     }
     if (!snapshot.userBankIds.includes(bank.id)) {
-      const result = store.joinBank(bank.id);
+      const result = await store.joinBank(bank.id);
       if (!result.ok) {
         alert(result.message);
         return;
@@ -124,7 +141,8 @@ function App() {
       return;
     }
 
-    let questions = store.getQuestions(bank.id);
+    let questions = store.getCachedQuestions ? store.getCachedQuestions(bank.id) : store.getQuestions(bank.id);
+    if (store.getQuestions.constructor.name === 'AsyncFunction') questions = await store.getQuestions(bank.id);
     let title = modeTitle(mode);
     if (mode === 'random') questions = shuffle(questions);
     if (mode === 'special') questions = questions.filter((item) => item.type === selectedType);
@@ -141,8 +159,9 @@ function App() {
     setPractice({ bank, questions, title, exam: false, randomNoNumber: mode === 'random' });
   }
 
-  function startExam(config) {
+  async function startExam(config) {
     const bank = snapshot.banks.find((item) => item.id === config.bankId);
+    if (store.getQuestions?.constructor.name === 'AsyncFunction') await store.getQuestions(config.bankId);
     const questions = store.buildExamPaper(config.bankId, config);
     if (!questions.length) {
       alert('当前配置没有可用题目');
@@ -150,6 +169,10 @@ function App() {
     }
     setPractice({ bank, questions, title: '模拟考试', exam: true, randomNoNumber: false });
     setExamConfig(null);
+  }
+
+  if (loading) {
+    return <main className="auth-page"><section className="auth-card"><div className="brand-mark">题</div><h1>正在连接后端</h1><p>正在连接 Cloudflare Worker 和 D1 数据库，请稍候。</p></section></main>;
   }
 
   if (screen === 'login') {
@@ -343,8 +366,8 @@ function PracticeHome({ joinedBanks, selectedMode, selectedType, setSelectedMode
 }
 
 function BankMarket({ banks, joinedIds, store, refresh, onOpen, onProfile }) {
-  function join(bank) {
-    const result = store.joinBank(bank.id);
+  async function join(bank) {
+    const result = await store.joinBank(bank.id);
     refresh();
     if (!result.ok) {
       alert(result.message);
@@ -381,9 +404,10 @@ function BankMarket({ banks, joinedIds, store, refresh, onOpen, onProfile }) {
 function BankDetail({ bank, store, refresh, onStart, onBack }) {
   if (!bank) return <Empty text="请选择题库" />;
   const joined = store.snapshot().userBankIds.includes(bank.id);
+  const questions = store.getCachedQuestions ? store.getCachedQuestions(bank.id) : store.getQuestions(bank.id);
 
-  function join() {
-    const result = store.joinBank(bank.id);
+  async function join() {
+    const result = await store.joinBank(bank.id);
     refresh();
     alert(result.message);
   }
@@ -414,7 +438,7 @@ function BankDetail({ bank, store, refresh, onStart, onBack }) {
           {bank.chapters.map((chapter) => (
             <button key={chapter.id} onClick={() => joined ? onStart(bank, 'sequence', { chapterId: chapter.id }) : alert('请先加入题库')}>
               <span>{chapter.name}</span>
-              <em>{store.getQuestions(bank.id).filter((item) => item.chapterId === chapter.id).length} 题</em>
+              <em>{questions.filter((item) => item.chapterId === chapter.id).length} 题</em>
             </button>
           ))}
         </div>
@@ -493,7 +517,7 @@ function PracticeScreen({ session, store, refresh, onExit }) {
     if (!session.exam && question.type !== 'multiple') submit(answer);
   }
 
-  function submit(answer = collectAnswer()) {
+  async function submit(answer = collectAnswer()) {
     if (!answer.length) {
       alert('请先作答');
       return;
@@ -502,7 +526,7 @@ function PracticeScreen({ session, store, refresh, onExit }) {
       syncCurrentAnswer(answer);
       return;
     }
-    const nextResult = store.submitAnswer(question.id, answer);
+    const nextResult = await store.submitAnswer(question.id, answer);
     setAnswers((prev) => ({ ...prev, [question.id]: { answer, result: nextResult } }));
     refresh();
   }
@@ -527,9 +551,9 @@ function PracticeScreen({ session, store, refresh, onExit }) {
     go(index + 1);
   }
 
-  function finishExam() {
+  async function finishExam() {
     const latest = { ...answers, [question.id]: { ...(answers[question.id] || {}), answer: collectAnswer() } };
-    const resultValue = store.submitExam(session.questions, latest);
+    const resultValue = await store.submitExam(session.questions, latest);
     setAnswers(latest);
     setExamResult(resultValue);
     setConfirmSubmit(false);
@@ -599,7 +623,7 @@ function PracticeScreen({ session, store, refresh, onExit }) {
             {question.type === 'multiple' && !session.exam && !result && !reviewMode && <button className="primary-btn" onClick={() => submit()}>确认答案</button>}
             {!options?.length && !session.exam && !result && !reviewMode && <button className="primary-btn" onClick={() => submit()}>提交答案</button>}
             <button className="primary-btn" onClick={next}>{index + 1 >= session.questions.length ? (session.exam ? '交卷' : '完成') : '下一题'}</button>
-            <button className="ghost-btn" onClick={() => { store.toggleFavorite(question.id); refresh(); }}><Star size={17} />{store.isFavorite(question.id) ? '已收藏' : '收藏'}</button>
+            <button className="ghost-btn" onClick={async () => { await store.toggleFavorite(question.id); refresh(); }}><Star size={17} />{store.isFavorite(question.id) ? '已收藏' : '收藏'}</button>
           </div>
         </section>
         <aside className="answer-sheet">
@@ -681,9 +705,9 @@ function AdminImport({ store, refresh }) {
     setForm((prev) => ({ ...prev, text, name: prev.name || file.name.replace(/\.[^.]+$/, '') }));
   }
 
-  function importBank() {
+  async function importBank() {
     const parsed = preview || parseQuestionsFromText(form.text);
-    const result = store.importBank({ ...form, chapters: parsed.chapters, questions: parsed.questions });
+    const result = await store.importBank({ ...form, chapters: parsed.chapters, questions: parsed.questions });
     if (!result.ok) {
       alert(result.message);
       return;
@@ -770,7 +794,7 @@ function AdminCodes({ snapshot, store, refresh }) {
           <label>套餐<select value={planId} onChange={(event) => setPlanId(event.target.value)}>{snapshot.plans.map((plan) => <option key={plan.id} value={plan.id}>{plan.name}</option>)}</select></label>
           <label>生成数量<input type="number" value={count} onChange={(event) => setCount(Number(event.target.value) || 1)} /></label>
         </div>
-        <button className="primary-btn" onClick={() => { const codes = store.createActivationCodes(planId, count); setLatest(codes); refresh(); }}>生成激活码</button>
+        <button className="primary-btn" onClick={async () => { const codes = await store.createActivationCodes(planId, count); setLatest(codes); refresh(); }}>生成激活码</button>
       </Panel>
       {!!latest.length && <CodeBox codes={latest.map((item) => item.code)} />}
       <Panel title="全部激活码">

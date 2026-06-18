@@ -16,12 +16,7 @@
 			"binding": "DB",
 			"database_name": "question-bank-db",
 			"database_id": "c64c0dfc-f4cd-4f67-baa9-3d5d9b8bea76",
-			"migrations_dir": "migrations"
-		},
-		{
-			"binding": "question_bank_db",
-			"database_name": "question-bank-db",
-			"database_id": "c64c0dfc-f4cd-4f67-baa9-3d5d9b8bea76",
+			"migrations_dir": "migrations",
 			"remote": true
 		}
 	]

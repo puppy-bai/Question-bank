@@ -75,7 +75,10 @@ async function listBanks(request, env) {
     GROUP BY b.id
     ORDER BY b.created_at DESC
   `).bind(userId || '').all();
-  return ok({ banks: banks.results || [] }, env);
+  const rows = banks.results || [];
+  const chapters = await env.DB.prepare('SELECT id, bank_id, name, sort_order FROM chapters ORDER BY sort_order ASC').all();
+  const chaptersByBank = groupBy(chapters.results || [], 'bank_id');
+  return ok({ banks: rows.map((bank) => ({ ...bank, chapters: chaptersByBank[bank.id] || [] })) }, env);
 }
 
 async function listQuestions(request, env) {
@@ -260,6 +263,15 @@ function requireAdmin(request) {
 function normalizeAnswer(answer) {
   const list = Array.isArray(answer) ? answer : [answer];
   return list.map((item) => String(item || '').trim().toUpperCase()).filter(Boolean).sort();
+}
+
+function groupBy(list, field) {
+  return list.reduce((acc, item) => {
+    const key = item[field];
+    acc[key] ||= [];
+    acc[key].push(item);
+    return acc;
+  }, {});
 }
 
 function makeSessionToken(user) {
