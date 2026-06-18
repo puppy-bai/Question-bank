@@ -144,6 +144,14 @@ https://question-bank-api.xxx.workers.dev
 
 这个地址就是前端以后要连接的 API 地址。
 
+当前项目已经部署出的 Worker 地址是：
+
+```text
+https://question-bank-api.2709635015.workers.dev
+```
+
+如果你在本机访问这个地址失败，但 `wrangler deployments list` 能看到部署记录，通常是当前网络无法访问 `workers.dev`，不是部署失败。可以打开代理、换网络，或后续绑定自己的域名。
+
 ## 9. 部署前端 Pages
 
 推荐用 Cloudflare Pages 连接 GitHub 仓库。
@@ -173,6 +181,26 @@ web/src/store-cloudflare.js
 ```
 
 然后把现在的 `localStorage` 数据层逐步替换成 Worker API。
+
+前端环境变量文件示例已经放在：
+
+```text
+web/.env.example
+```
+
+本地开发时复制一份：
+
+```bash
+copy web\.env.example web\.env.local
+```
+
+里面的：
+
+```text
+VITE_API_BASE_URL=https://question-bank-api.2709635015.workers.dev
+```
+
+就是前端要请求的后端地址。
 
 第一阶段先接这些接口：
 
