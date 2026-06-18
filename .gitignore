@@ -7,5 +7,7 @@ miniprogram_npm/
 cloudfunctions/**/node_modules/
 cloudfunctions/**/package-lock.json
 .tmp/
+.wrangler/
+**/.wrangler/
 external/
 project.private.config.json
