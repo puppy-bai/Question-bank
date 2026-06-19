@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import JSZip from 'jszip';
 import {
@@ -36,6 +36,7 @@ import './styles.css';
 const useCloudflare = import.meta.env.VITE_USE_CLOUDFLARE === 'true';
 const store = useCloudflare ? createCloudflareStore() : createStore();
 const rememberedLoginKey = 'question_bank_remember_login';
+const practicePreferenceKey = 'question_bank_practice_preferences';
 
 const practiceModes = [
   { key: 'sequence', title: '顺序练习', icon: BookOpen },
@@ -75,6 +76,22 @@ function saveRememberedLogin({ phone, password }) {
 
 function clearRememberedLogin() {
   localStorage.removeItem(rememberedLoginKey);
+}
+
+function loadPracticePreferences() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(practicePreferenceKey) || '{}');
+    return {
+      autoNextOnCorrect: Boolean(saved.autoNextOnCorrect),
+      persistentReviewMode: Boolean(saved.persistentReviewMode)
+    };
+  } catch {
+    return { autoNextOnCorrect: false, persistentReviewMode: false };
+  }
+}
+
+function savePracticePreferences(value) {
+  localStorage.setItem(practicePreferenceKey, JSON.stringify(value));
 }
 
 function App() {
@@ -587,23 +604,51 @@ function ExamConfig({ snapshot, config, setConfig, onStart, onCancel }) {
 }
 
 function PracticeScreen({ session, store, refresh, onExit }) {
+  const savedPreferences = useMemo(loadPracticePreferences, []);
   const [index, setIndex] = useState(0);
   const [answers, setAnswers] = useState({});
   const [selected, setSelected] = useState({});
   const [textAnswer, setTextAnswer] = useState('');
-  const [reviewMode, setReviewMode] = useState(false);
+  const [autoNextOnCorrect, setAutoNextOnCorrect] = useState(savedPreferences.autoNextOnCorrect);
+  const [reviewMode, setReviewMode] = useState(savedPreferences.persistentReviewMode);
   const [confirmSubmit, setConfirmSubmit] = useState(false);
   const [examResult, setExamResult] = useState(null);
+  const autoNextTimer = useRef(null);
   const question = session.questions[index];
   const record = answers[question.id];
   const result = session.exam ? examResult?.results?.[question.id] : record?.result;
-  const showAnswer = reviewMode || Boolean(result);
+  const showAnswer = (!session.exam && reviewMode) || Boolean(result);
   const options = question.type === 'judge'
     ? [{ key: '正确', text: '正确', plain: true }, { key: '错误', text: '错误', plain: true }]
     : question.options;
 
+  useEffect(() => {
+    savePracticePreferences({ autoNextOnCorrect, persistentReviewMode: reviewMode });
+  }, [autoNextOnCorrect, reviewMode]);
+
+  useEffect(() => () => {
+    if (autoNextTimer.current) clearTimeout(autoNextTimer.current);
+  }, []);
+
   function syncCurrentAnswer(answer = collectAnswer()) {
     setAnswers((prev) => ({ ...prev, [question.id]: { ...(prev[question.id] || {}), answer } }));
+  }
+
+  function scheduleAutoNext(nextResult) {
+    if (session.exam || !autoNextOnCorrect || !nextResult?.correct) return;
+    if (autoNextTimer.current) clearTimeout(autoNextTimer.current);
+    autoNextTimer.current = setTimeout(() => {
+      autoNextTimer.current = null;
+      setIndex((currentIndex) => {
+        const nextIndex = currentIndex + 1;
+        if (nextIndex >= session.questions.length) return currentIndex;
+        const nextQuestion = session.questions[nextIndex];
+        const nextRecord = answers[nextQuestion.id] || {};
+        setSelected(arrayToMap(nextRecord.answer || []));
+        setTextAnswer((nextRecord.answer || []).join('\n'));
+        return nextIndex;
+      });
+    }, 650);
   }
 
   function collectAnswer(forcedSelected = selected) {
@@ -617,6 +662,7 @@ function PracticeScreen({ session, store, refresh, onExit }) {
     setSelected(next);
     const answer = collectAnswer(next);
     setAnswers((prev) => ({ ...prev, [question.id]: { ...(prev[question.id] || {}), answer } }));
+    if (!session.exam && reviewMode) return;
     if (!session.exam && question.type !== 'multiple') submit(answer);
   }
 
@@ -632,9 +678,14 @@ function PracticeScreen({ session, store, refresh, onExit }) {
     const nextResult = await store.submitAnswer(question.id, answer);
     setAnswers((prev) => ({ ...prev, [question.id]: { answer, result: nextResult } }));
     refresh();
+    scheduleAutoNext(nextResult);
   }
 
   function go(nextIndex) {
+    if (autoNextTimer.current) {
+      clearTimeout(autoNextTimer.current);
+      autoNextTimer.current = null;
+    }
     syncCurrentAnswer();
     const safeIndex = Math.max(0, Math.min(nextIndex, session.questions.length - 1));
     const nextQuestion = session.questions[safeIndex];
@@ -642,7 +693,6 @@ function PracticeScreen({ session, store, refresh, onExit }) {
     setIndex(safeIndex);
     setSelected(arrayToMap(nextRecord.answer || []));
     setTextAnswer((nextRecord.answer || []).join('\n'));
-    setReviewMode(false);
   }
 
   function next() {
@@ -690,7 +740,18 @@ function PracticeScreen({ session, store, refresh, onExit }) {
           <h2>{session.title}</h2>
           <p>{session.bank.name}{session.randomNoNumber ? '' : ` · ${index + 1} / ${session.questions.length}`}</p>
         </div>
-        {!session.exam && <button className="ghost-btn" onClick={() => setReviewMode(!reviewMode)}>{reviewMode ? '答题' : '背题'}</button>}
+        {!session.exam && (
+          <div className="practice-switches">
+            <label className="switch-control">
+              <input type="checkbox" checked={autoNextOnCorrect} onChange={(event) => setAutoNextOnCorrect(event.target.checked)} />
+              <span>答对自动下一题</span>
+            </label>
+            <label className="switch-control">
+              <input type="checkbox" checked={reviewMode} onChange={(event) => setReviewMode(event.target.checked)} />
+              <span>背题模式</span>
+            </label>
+          </div>
+        )}
       </header>
 
       <main className="question-layout">

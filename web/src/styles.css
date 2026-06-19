@@ -621,6 +621,34 @@ textarea {
   color: #607089;
 }
 
+.practice-switches {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.switch-control {
+  min-height: 38px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  border: 1px solid #d9e4ec;
+  border-radius: 8px;
+  background: #fff;
+  color: #34445a;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.switch-control input {
+  width: 16px;
+  height: 16px;
+  accent-color: #0f766e;
+}
+
 .question-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 250px;
