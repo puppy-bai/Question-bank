@@ -13,3 +13,7 @@ cloudfunctions/**/package-lock.json
 **/.wrangler/
 external/
 project.private.config.json
+
+.dev.vars*
+!.dev.vars.example
+!.env.example
