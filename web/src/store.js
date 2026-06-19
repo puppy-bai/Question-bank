@@ -398,7 +398,24 @@ export function createStore() {
       save();
       return true;
     },
-    grantUserPlan(userId, planId) {
+    grantUserPlan(userId, grant) {
+      const payload = typeof grant === 'string' ? { planId: grant } : (grant || {});
+      let planId = payload.planId;
+      if (!planId && payload.bankId) {
+        const bank = state.banks.find((item) => item.id === payload.bankId);
+        planId = `plan-bank-${payload.bankId}`;
+        if (bank && !state.plans.some((item) => item.id === planId)) {
+          state.plans.push({
+            id: planId,
+            name: `${bank.name} 单题库授权`,
+            type: 'bank',
+            bankId: bank.id,
+            durationDays: 365,
+            price: Number(bank.price) || 0,
+            enabled: true
+          });
+        }
+      }
       const plan = state.plans.find((item) => item.id === planId);
       if (!plan) return false;
       grantEntitlement(userId, {

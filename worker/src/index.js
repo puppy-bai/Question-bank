@@ -328,12 +328,19 @@ async function createAdminEntitlement(request, env) {
   requireAdmin(request);
   const body = await readJson(request);
   const userId = String(body.userId || body.user_id || '').trim();
-  const planId = String(body.planId || body.plan_id || '').trim();
-  if (!userId || !planId) return fail('缺少用户或套餐', 400, env);
+  let planId = String(body.planId || body.plan_id || '').trim();
+  const bankId = String(body.bankId || body.bank_id || '').trim();
+  if (!userId || (!planId && !bankId)) return fail('缺少用户或授权项目', 400, env);
   const user = await env.DB.prepare('SELECT id, name, phone FROM users WHERE id = ? AND role = ?').bind(userId, 'user').first();
   if (!user) return fail('用户不存在', 404, env);
+  let bank = null;
+  if (bankId) {
+    bank = await env.DB.prepare('SELECT * FROM banks WHERE id = ?').bind(bankId).first();
+    if (!bank) return fail('题库不存在', 404, env);
+    planId = await ensureBankPlan(env, bank);
+  }
   const plan = await env.DB.prepare('SELECT * FROM plans WHERE id = ?').bind(planId).first();
-  if (!plan) return fail('套餐不存在', 404, env);
+  if (!plan) return fail('授权项目不存在', 404, env);
   const entitlement = await grantEntitlement(env, userId, {
     type: plan.type,
     bankId: plan.bank_id,
@@ -350,7 +357,7 @@ async function createAdminEntitlement(request, env) {
     action: 'user.grant',
     targetType: 'user',
     targetId: userId,
-    detail: { userName: user.name, phone: user.phone, planId, planName: plan.name, entitlementId: entitlement.id }
+    detail: { userName: user.name, phone: user.phone, planId, planName: plan.name, bankId: plan.bank_id || '', bankName: bank?.name || '', entitlementId: entitlement.id }
   });
   return ok({ ok: true, entitlement }, env);
 }

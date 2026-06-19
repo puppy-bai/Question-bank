@@ -1065,12 +1065,22 @@ function AdminAccounts({ snapshot, store, refresh }) {
 }
 
 function AdminUsers({ snapshot, store, refresh }) {
-  const normalUsers = snapshot.users.filter((item) => item.role === 'user');
+  const normalUsers = useMemo(() => snapshot.users.filter((item) => item.role === 'user'), [snapshot.users]);
+  const membershipPlans = useMemo(() => snapshot.plans.filter((plan) => plan.type === 'membership' && plan.enabled !== false), [snapshot.plans]);
+  const grantBanks = useMemo(() => snapshot.banks.filter((bank) => bank.id), [snapshot.banks]);
   const [userId, setUserId] = useState(normalUsers[0]?.id || '');
-  const [planId, setPlanId] = useState(snapshot.plans[0]?.id || '');
+  const [grantType, setGrantType] = useState('bank');
+  const [planId, setPlanId] = useState(membershipPlans[0]?.id || snapshot.plans[0]?.id || '');
+  const [bankId, setBankId] = useState(grantBanks[0]?.id || '');
   const [detailLoading, setDetailLoading] = useState(false);
   const selectedUser = normalUsers.find((user) => user.id === userId);
   const selectedDetail = snapshot.selectedUserDetail;
+
+  useEffect(() => {
+    if (!normalUsers.some((user) => user.id === userId)) setUserId(normalUsers[0]?.id || '');
+    if (!membershipPlans.some((plan) => plan.id === planId)) setPlanId(membershipPlans[0]?.id || '');
+    if (!grantBanks.some((bank) => bank.id === bankId)) setBankId(grantBanks[0]?.id || '');
+  }, [userId, planId, bankId, normalUsers, membershipPlans, grantBanks]);
 
   async function openUserDetail(user) {
     setUserId(user.id);
@@ -1140,11 +1150,19 @@ function AdminUsers({ snapshot, store, refresh }) {
       <Panel title="手动授权">
         <div className="config-grid">
           <label>用户<select value={userId} onChange={(event) => setUserId(event.target.value)}>{normalUsers.map((user) => <option key={user.id} value={user.id}>{user.name} / {user.phone}</option>)}</select></label>
-          <label>套餐<select value={planId} onChange={(event) => setPlanId(event.target.value)}>{snapshot.plans.map((plan) => <option key={plan.id} value={plan.id}>{plan.name}</option>)}</select></label>
+          <label>授权类型<select value={grantType} onChange={(event) => setGrantType(event.target.value)}><option value="bank">单题库授权</option><option value="membership">会员授权</option></select></label>
+          {grantType === 'membership' ? (
+            <label>套餐<select value={planId} onChange={(event) => setPlanId(event.target.value)}>{membershipPlans.map((plan) => <option key={plan.id} value={plan.id}>{plan.name}</option>)}</select></label>
+          ) : (
+            <label>题库<select value={bankId} onChange={(event) => setBankId(event.target.value)}>{grantBanks.map((bank) => <option key={bank.id} value={bank.id}>{bank.name}{bank.status === 'published' ? '' : '（未发布）'}</option>)}</select></label>
+          )}
         </div>
         {selectedUser && <p className="muted">当前用户：{selectedUser.name}，注册时间：{formatDate(selectedUser.created_at || selectedUser.createdAt)}</p>}
         <button className="primary-btn" onClick={async () => {
-          const ok = await store.grantUserPlan(userId, planId);
+          if (!userId) return alert('请选择用户');
+          if (grantType === 'membership' && !planId) return alert('请选择套餐');
+          if (grantType === 'bank' && !bankId) return alert('请选择题库');
+          const ok = await store.grantUserPlan(userId, grantType === 'membership' ? { planId } : { bankId });
           if (ok) {
             if (store.getAdminUserDetail) await store.getAdminUserDetail(userId);
             refresh();

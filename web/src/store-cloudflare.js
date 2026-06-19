@@ -300,8 +300,9 @@ export function createCloudflareStore() {
       await refreshBanks();
       return true;
     },
-    async grantUserPlan(userId, planId) {
-      await api.createAdminEntitlement(userId, planId);
+    async grantUserPlan(userId, grant) {
+      const payload = typeof grant === 'string' ? { userId, planId: grant } : { userId, ...(grant || {}) };
+      await api.createAdminEntitlement(payload);
       await this.refreshAdminUsers();
       if (state.selectedUserDetail?.user?.id === userId) await this.getAdminUserDetail(userId);
       await refreshBanks();

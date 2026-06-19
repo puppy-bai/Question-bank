@@ -49,7 +49,7 @@ export function createApiClient(options = {}) {
     listAdminUsers: () => request('/api/admin/users', { method: 'GET' }),
     getAdminUserDetail: (userId) => request(`/api/admin/user-detail?userId=${encodeURIComponent(userId)}`, { method: 'GET' }),
     deleteAdminUser: (userId) => request('/api/admin/users', { method: 'DELETE', body: JSON.stringify({ userId }) }),
-    createAdminEntitlement: (userId, planId) => request('/api/admin/entitlements', { method: 'POST', body: JSON.stringify({ userId, planId }) }),
+    createAdminEntitlement: (payload) => request('/api/admin/entitlements', { method: 'POST', body: JSON.stringify(payload) }),
     deleteAdminEntitlement: (entitlementId) => request('/api/admin/entitlements', { method: 'DELETE', body: JSON.stringify({ entitlementId }) }),
     listAdminLogs: () => request('/api/admin/logs', { method: 'GET' }),
     listAdminOrders: () => request('/api/admin/orders', { method: 'GET' }),
