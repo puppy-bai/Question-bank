@@ -675,10 +675,25 @@ function PracticeScreen({ session, store, refresh, onExit }) {
       syncCurrentAnswer(answer);
       return;
     }
-    const nextResult = await store.submitAnswer(question.id, answer);
-    setAnswers((prev) => ({ ...prev, [question.id]: { answer, result: nextResult } }));
-    refresh();
-    scheduleAutoNext(nextResult);
+    const instantResult = judgeLocally(question, answer);
+    setAnswers((prev) => ({ ...prev, [question.id]: { answer, result: instantResult } }));
+    scheduleAutoNext(instantResult);
+    store.submitAnswer(question.id, answer)
+      .then((nextResult) => {
+        if (!nextResult) return;
+        setAnswers((prev) => ({ ...prev, [question.id]: { answer, result: { ...nextResult, pending: false } } }));
+        refresh();
+      })
+      .catch((error) => {
+        console.warn('submit answer failed', error);
+        setAnswers((prev) => ({
+          ...prev,
+          [question.id]: {
+            answer,
+            result: { ...instantResult, pending: false, syncError: true }
+          }
+        }));
+      });
   }
 
   function go(nextIndex) {
@@ -780,6 +795,7 @@ function PracticeScreen({ session, store, refresh, onExit }) {
               <h3>{reviewMode && !result ? '参考答案' : result?.correct ? '回答正确' : '回答错误'}</h3>
               <p>正确答案：{question.answerText || question.answer.join('、')}</p>
               <p>{question.analysis || '暂无解析'}</p>
+              {result?.syncError && <p className="tiny danger-text">答题结果已在本地显示，但同步记录失败，请稍后检查网络。</p>}
             </div>
           )}
           <div className="button-row">
@@ -1767,6 +1783,39 @@ function arrayToMap(answer) {
   const map = {};
   (answer || []).forEach((item) => { map[item] = true; });
   return map;
+}
+
+function judgeLocally(question, answer) {
+  const userAnswer = normalizePracticeAnswer(answer, question.type);
+  const expected = normalizePracticeAnswer(question.answer || [], question.type);
+  const correct = question.type !== 'short'
+    && userAnswer.length === expected.length
+    && userAnswer.every((item, index) => item === expected[index]);
+  return {
+    correct,
+    answer: expected,
+    answerText: question.answerText || expected.join('、'),
+    analysis: question.analysis || '',
+    pending: true
+  };
+}
+
+function normalizePracticeAnswer(answer, type = '') {
+  const list = Array.isArray(answer) ? answer : [answer];
+  return list
+    .flatMap((item) => String(item || '').split(/[,，、\s]+/))
+    .map((item) => normalizePracticeJudge(item.trim().toUpperCase()))
+    .filter(Boolean)
+    .map((item) => (type === 'judge' ? item : item.replace(/[^A-H]/g, '') || item))
+    .filter(Boolean)
+    .sort();
+}
+
+function normalizePracticeJudge(value) {
+  const text = String(value || '').trim().toUpperCase();
+  if (['正确', '对', 'TRUE', 'T', '√', 'YES', 'Y'].includes(text)) return '正确';
+  if (['错误', '错', 'FALSE', 'F', '×', 'X', 'NO', 'N'].includes(text)) return '错误';
+  return text;
 }
 
 function shuffle(list) {

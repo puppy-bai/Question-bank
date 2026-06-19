@@ -89,35 +89,34 @@ export function createCloudflareStore() {
           state.currentUser = null;
         }
       }
-      await refreshBanks();
-      await refreshOrders();
+      await Promise.all([refreshBanks(), refreshOrders()]);
     },
     async registerUser(name, phone, password) {
       const result = await api.registerUser(name, phone, password);
       state.currentUser = result.user;
       api.setSession(result.user.id, '');
-      await refreshBanks();
-      await refreshOrders();
+      await Promise.all([refreshBanks(), refreshOrders()]);
       return result.user;
     },
     async loginUser(phone, password) {
       const result = await api.loginUser(phone, password);
       state.currentUser = result.user;
       api.setSession(result.user.id, '');
-      await refreshBanks();
-      await refreshOrders();
+      await Promise.all([refreshBanks(), refreshOrders()]);
       return result.user;
     },
     async loginAdmin(phone, password) {
       const result = await api.loginAdmin(phone, password);
       state.currentUser = result.user;
       api.setSession(result.user.id, result.token);
-      await refreshBanks();
-      const users = await api.listAdminUsers();
+      const [users, admins] = await Promise.all([
+        api.listAdminUsers(),
+        api.listAdminAccounts(),
+        refreshBanks(),
+        refreshOrders()
+      ]);
       state.users = users.users || [];
-      const admins = await api.listAdminAccounts();
       state.adminAccounts = admins.admins || [];
-      await refreshOrders();
       return true;
     },
     async refreshAdminAccounts() {
