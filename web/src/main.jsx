@@ -71,7 +71,6 @@ function App() {
   const [practice, setPractice] = useState(null);
   const [examConfig, setExamConfig] = useState(null);
   const [loginForm, setLoginForm] = useState({ name: '', phone: '', password: '' });
-  const [loading, setLoading] = useState(useCloudflare);
 
   const refresh = () => setSnapshot(store.snapshot());
   const currentUser = snapshot.currentUser;
@@ -82,8 +81,7 @@ function App() {
     if (!store.bootstrap) return;
     store.bootstrap()
       .then(() => refresh())
-      .catch((error) => alert(`连接后端失败：${error.message}`))
-      .finally(() => setLoading(false));
+      .catch((error) => console.warn('bootstrap failed', error));
   }, []);
 
   async function loginUser() {
@@ -195,10 +193,6 @@ function App() {
     }
     setPractice({ bank, questions, title: '模拟考试', exam: true, randomNoNumber: false });
     setExamConfig(null);
-  }
-
-  if (loading) {
-    return <main className="auth-page"><section className="auth-card"><div className="brand-mark">题</div><h1>正在连接后端</h1><p>正在连接 Cloudflare Worker 和 D1 数据库，请稍候。</p></section></main>;
   }
 
   if (screen === 'login') {
