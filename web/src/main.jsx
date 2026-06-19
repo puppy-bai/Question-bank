@@ -53,10 +53,15 @@ const typeLabels = {
   short: '简答题'
 };
 
+function getInitialScreen(currentUser, isAdminPath) {
+  if (isAdminPath) return currentUser?.role === 'admin' ? 'admin' : 'admin-login';
+  return currentUser?.role === 'user' ? 'app' : 'login';
+}
+
 function App() {
   const [snapshot, setSnapshot] = useState(store.snapshot());
-  const [screen, setScreen] = useState(snapshot.currentUser?.role === 'admin' ? 'admin' : snapshot.currentUser ? 'app' : 'login');
-  const [roleTab, setRoleTab] = useState('user');
+  const isAdminPath = window.location.pathname.startsWith('/admin');
+  const [screen, setScreen] = useState(() => getInitialScreen(snapshot.currentUser, isAdminPath));
   const [userAuthMode, setUserAuthMode] = useState('login');
   const [activeTab, setActiveTab] = useState('practice');
   const [adminTab, setAdminTab] = useState('banks');
@@ -89,7 +94,7 @@ function App() {
     try {
       await store.loginUser(loginForm.name.trim(), loginForm.phone.trim(), loginForm.password.trim());
       refresh();
-      setScreen('app');
+      setScreen(isAdminPath ? 'admin-login' : 'app');
       setActiveTab('practice');
     } catch (error) {
       alert(error.message || '\u767b\u5f55\u5931\u8d25');
@@ -104,7 +109,7 @@ function App() {
     try {
       await store.registerUser(loginForm.name.trim(), loginForm.phone.trim(), loginForm.password.trim());
       refresh();
-      setScreen('app');
+      setScreen(isAdminPath ? 'admin-login' : 'app');
       setActiveTab('practice');
     } catch (error) {
       alert(error.message || '\u6ce8\u518c\u5931\u8d25');
@@ -130,7 +135,7 @@ function App() {
   function logout() {
     store.logout();
     refresh();
-    setScreen('login');
+    setScreen(isAdminPath ? 'admin-login' : 'login');
     setPractice(null);
   }
 
@@ -202,33 +207,39 @@ function App() {
         <section className="auth-card">
           <div className="brand-mark">题</div>
           <h1>题库练习平台</h1>
-          <p>用户可加入题库后练习、考试、收藏和复习错题；管理员可导入题库、配置考试模板、生成激活码和查看数据。</p>
+          <p>登录后可加入题库，进行练习、考试、收藏和错题复习。</p>
 
-          <div className="segmented">
-            <button className={roleTab === 'user' ? 'active' : ''} onClick={() => setRoleTab('user')}>用户登录 / 注册</button>
-            <button className={roleTab === 'admin' ? 'active' : ''} onClick={() => setRoleTab('admin')}>管理员登录</button>
+          <div className="form-stack">
+            <div className="segmented inline">
+              <button className={userAuthMode === 'login' ? 'active' : ''} onClick={() => setUserAuthMode('login')}>登录</button>
+              <button className={userAuthMode === 'register' ? 'active' : ''} onClick={() => setUserAuthMode('register')}>注册</button>
+            </div>
+            <input placeholder="姓名" value={loginForm.name} onChange={(event) => setLoginForm({ ...loginForm, name: event.target.value })} />
+            <input placeholder="手机号" value={loginForm.phone} onChange={(event) => setLoginForm({ ...loginForm, phone: event.target.value })} />
+            <input placeholder="密码（至少 6 位）" type="password" value={loginForm.password} onChange={(event) => setLoginForm({ ...loginForm, password: event.target.value })} />
+            <button className="primary-btn" onClick={userAuthMode === 'login' ? loginUser : registerUser}>
+              {userAuthMode === 'login' ? '登录并进入用户端' : '注册并进入用户端'}
+            </button>
+            <p className="tiny">{userAuthMode === 'login' ? '已注册用户使用姓名、手机号和密码登录。' : '首次使用请先注册；一个手机号对应一个独立用户。'}</p>
           </div>
+        </section>
+      </main>
+    );
+  }
 
-          {roleTab === 'user' ? (
-            <div className="form-stack">
-              <div className="segmented inline">
-                <button className={userAuthMode === 'login' ? 'active' : ''} onClick={() => setUserAuthMode('login')}>登录</button>
-                <button className={userAuthMode === 'register' ? 'active' : ''} onClick={() => setUserAuthMode('register')}>注册</button>
-              </div>
-              <input placeholder="姓名" value={loginForm.name} onChange={(event) => setLoginForm({ ...loginForm, name: event.target.value })} />
-              <input placeholder="手机号" value={loginForm.phone} onChange={(event) => setLoginForm({ ...loginForm, phone: event.target.value })} />
-              <button className="primary-btn" onClick={userAuthMode === 'login' ? loginUser : registerUser}>
-                {userAuthMode === 'login' ? '登录并进入用户端' : '注册并进入用户端'}
-              </button>
-              <p className="tiny">{userAuthMode === 'login' ? '已注册用户使用姓名和手机号登录。' : '首次使用请先注册；一个手机号对应一个独立用户。'}</p>
-            </div>
-          ) : (
-            <div className="form-stack">
-              <input placeholder="管理员密码" type="password" value={loginForm.password} onChange={(event) => setLoginForm({ ...loginForm, password: event.target.value })} />
-              <button className="primary-btn" onClick={loginAdmin}>进入管理员后台</button>
-              <p className="tiny">演示密码：admin123。正式部署后应迁移到后端环境变量和权限系统。</p>
-            </div>
-          )}
+  if (screen === 'admin-login') {
+    return (
+      <main className="auth-page">
+        <section className="auth-card">
+          <div className="brand-mark">管</div>
+          <h1>管理后台</h1>
+          <p>用于题库导入、题库管理、用户数据查看、授权和后台配置。</p>
+
+          <div className="form-stack">
+            <input placeholder="管理员密码" type="password" value={loginForm.password} onChange={(event) => setLoginForm({ ...loginForm, password: event.target.value })} />
+            <button className="primary-btn" onClick={loginAdmin}>进入管理员后台</button>
+            <p className="tiny">管理员入口已与用户端分离，请通过 /admin 访问后台。</p>
+          </div>
         </section>
       </main>
     );
