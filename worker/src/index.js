@@ -1175,113 +1175,65 @@ function makeOrderNo() {
 }
 
 function md5(input) {
+  function rotateLeft(value, shift) {
+    return (value << shift) | (value >>> (32 - shift));
+  }
+  function addUnsigned(x, y) {
+    const x4 = x & 0x40000000;
+    const y4 = y & 0x40000000;
+    const x8 = x & 0x80000000;
+    const y8 = y & 0x80000000;
+    const result = (x & 0x3fffffff) + (y & 0x3fffffff);
+    if (x4 & y4) return result ^ 0x80000000 ^ x8 ^ y8;
+    if (x4 | y4) return (result & 0x40000000) ? result ^ 0xc0000000 ^ x8 ^ y8 : result ^ 0x40000000 ^ x8 ^ y8;
+    return result ^ x8 ^ y8;
+  }
+  const f = (x, y, z) => (x & y) | (~x & z);
+  const g = (x, y, z) => (x & z) | (y & ~z);
+  const h = (x, y, z) => x ^ y ^ z;
+  const i = (x, y, z) => y ^ (x | ~z);
+  const transform = (func, a, b, c, d, x, s, ac) => addUnsigned(rotateLeft(addUnsigned(addUnsigned(a, func(b, c, d)), addUnsigned(x, ac)), s), b);
   const utf8 = unescape(encodeURIComponent(String(input)));
   const words = [];
-  for (let index = 0; index < utf8.length; index += 1) {
-    words[index >> 2] |= utf8.charCodeAt(index) << ((index % 4) * 8);
-  }
-  const bitLength = utf8.length * 8;
-  words[bitLength >> 5] |= 0x80 << (bitLength % 32);
-  words[(((bitLength + 64) >>> 9) << 4) + 14] = bitLength;
-
+  let byteLength = utf8.length;
+  for (let offset = 0; offset < byteLength; offset += 1) words[offset >> 2] |= utf8.charCodeAt(offset) << ((offset % 4) * 8);
+  words[byteLength >> 2] |= 0x80 << ((byteLength % 4) * 8);
+  words[(((byteLength + 8) >> 6) * 16) + 14] = byteLength * 8;
   let a = 0x67452301;
   let b = 0xefcdab89;
   let c = 0x98badcfe;
   let d = 0x10325476;
-
-  const rotate = (value, amount) => (value << amount) | (value >>> (32 - amount));
-  const add = (...values) => values.reduce((sum, value) => (sum + value) | 0, 0);
-  const cmn = (q, x, y, value, shift, constant) => add(rotate(add(x, q, value, constant), shift), y);
-  const ff = (x, y, z) => (x & y) | (~x & z);
-  const gg = (x, y, z) => (x & z) | (y & ~z);
-  const hh = (x, y, z) => x ^ y ^ z;
-  const ii = (x, y, z) => y ^ (x | ~z);
-
-  for (let offset = 0; offset < words.length; offset += 16) {
-    const oldA = a;
-    const oldB = b;
-    const oldC = c;
-    const oldD = d;
-
-    a = cmn(ff(b, c, d), a, b, words[offset], 7, -680876936);
-    d = cmn(ff(a, b, c), d, a, words[offset + 1], 12, -389564586);
-    c = cmn(ff(d, a, b), c, d, words[offset + 2], 17, 606105819);
-    b = cmn(ff(c, d, a), b, c, words[offset + 3], 22, -1044525330);
-    a = cmn(ff(b, c, d), a, b, words[offset + 4], 7, -176418897);
-    d = cmn(ff(a, b, c), d, a, words[offset + 5], 12, 1200080426);
-    c = cmn(ff(d, a, b), c, d, words[offset + 6], 17, -1473231341);
-    b = cmn(ff(c, d, a), b, c, words[offset + 7], 22, -45705983);
-    a = cmn(ff(b, c, d), a, b, words[offset + 8], 7, 1770035416);
-    d = cmn(ff(a, b, c), d, a, words[offset + 9], 12, -1958414417);
-    c = cmn(ff(d, a, b), c, d, words[offset + 10], 17, -42063);
-    b = cmn(ff(c, d, a), b, c, words[offset + 11], 22, -1990404162);
-    a = cmn(ff(b, c, d), a, b, words[offset + 12], 7, 1804603682);
-    d = cmn(ff(a, b, c), d, a, words[offset + 13], 12, -40341101);
-    c = cmn(ff(d, a, b), c, d, words[offset + 14], 17, -1502002290);
-    b = cmn(ff(c, d, a), b, c, words[offset + 15], 22, 1236535329);
-
-    a = cmn(gg(b, c, d), a, b, words[offset + 1], 5, -165796510);
-    d = cmn(gg(a, b, c), d, a, words[offset + 6], 9, -1069501632);
-    c = cmn(gg(d, a, b), c, d, words[offset + 11], 14, 643717713);
-    b = cmn(gg(c, d, a), b, c, words[offset], 20, -373897302);
-    a = cmn(gg(b, c, d), a, b, words[offset + 5], 5, -701558691);
-    d = cmn(gg(a, b, c), d, a, words[offset + 10], 9, 38016083);
-    c = cmn(gg(d, a, b), c, d, words[offset + 15], 14, -660478335);
-    b = cmn(gg(c, d, a), b, c, words[offset + 4], 20, -405537848);
-    a = cmn(gg(b, c, d), a, b, words[offset + 9], 5, 568446438);
-    d = cmn(gg(a, b, c), d, a, words[offset + 14], 9, -1019803690);
-    c = cmn(gg(d, a, b), c, d, words[offset + 3], 14, -187363961);
-    b = cmn(gg(c, d, a), b, c, words[offset + 8], 20, 1163531501);
-    a = cmn(gg(b, c, d), a, b, words[offset + 13], 5, -1444681467);
-    d = cmn(gg(a, b, c), d, a, words[offset + 2], 9, -51403784);
-    c = cmn(gg(d, a, b), c, d, words[offset + 7], 14, 1735328473);
-    b = cmn(gg(c, d, a), b, c, words[offset + 12], 20, -1926607734);
-
-    a = cmn(hh(b, c, d), a, b, words[offset + 5], 4, -378558);
-    d = cmn(hh(a, b, c), d, a, words[offset + 8], 11, -2022574463);
-    c = cmn(hh(d, a, b), c, d, words[offset + 11], 16, 1839030562);
-    b = cmn(hh(c, d, a), b, c, words[offset + 14], 23, -35309556);
-    a = cmn(hh(b, c, d), a, b, words[offset + 1], 4, -1530992060);
-    d = cmn(hh(a, b, c), d, a, words[offset + 4], 11, 1272893353);
-    c = cmn(hh(d, a, b), c, d, words[offset + 7], 16, -155497632);
-    b = cmn(hh(c, d, a), b, c, words[offset + 10], 23, -1094730640);
-    a = cmn(hh(b, c, d), a, b, words[offset + 13], 4, 681279174);
-    d = cmn(hh(a, b, c), d, a, words[offset], 11, -358537222);
-    c = cmn(hh(d, a, b), c, d, words[offset + 3], 16, -722521979);
-    b = cmn(hh(c, d, a), b, c, words[offset + 6], 23, 76029189);
-    a = cmn(hh(b, c, d), a, b, words[offset + 9], 4, -640364487);
-    d = cmn(hh(a, b, c), d, a, words[offset + 12], 11, -421815835);
-    c = cmn(hh(d, a, b), c, d, words[offset + 15], 16, 530742520);
-    b = cmn(hh(c, d, a), b, c, words[offset + 2], 23, -995338651);
-
-    a = cmn(ii(b, c, d), a, b, words[offset], 6, -198630844);
-    d = cmn(ii(a, b, c), d, a, words[offset + 7], 10, 1126891415);
-    c = cmn(ii(d, a, b), c, d, words[offset + 14], 15, -1416354905);
-    b = cmn(ii(c, d, a), b, c, words[offset + 5], 21, -57434055);
-    a = cmn(ii(b, c, d), a, b, words[offset + 12], 6, 1700485571);
-    d = cmn(ii(a, b, c), d, a, words[offset + 3], 10, -1894986606);
-    c = cmn(ii(d, a, b), c, d, words[offset + 10], 15, -1051523);
-    b = cmn(ii(c, d, a), b, c, words[offset + 1], 21, -2054922799);
-    a = cmn(ii(b, c, d), a, b, words[offset + 8], 6, 1873313359);
-    d = cmn(ii(a, b, c), d, a, words[offset + 15], 10, -30611744);
-    c = cmn(ii(d, a, b), c, d, words[offset + 6], 15, -1560198380);
-    b = cmn(ii(c, d, a), b, c, words[offset + 13], 21, 1309151649);
-    a = cmn(ii(b, c, d), a, b, words[offset + 4], 6, -145523070);
-    d = cmn(ii(a, b, c), d, a, words[offset + 11], 10, -1120210379);
-    c = cmn(ii(d, a, b), c, d, words[offset + 2], 15, 718787259);
-    b = cmn(ii(c, d, a), b, c, words[offset + 9], 21, -343485551);
-
-    a = add(a, oldA);
-    b = add(b, oldB);
-    c = add(c, oldC);
-    d = add(d, oldD);
+  for (let k = 0; k < words.length; k += 16) {
+    const aa = a;
+    const bb = b;
+    const cc = c;
+    const dd = d;
+    a = transform(f, a, b, c, d, words[k + 0], 7, 0xd76aa478); d = transform(f, d, a, b, c, words[k + 1], 12, 0xe8c7b756); c = transform(f, c, d, a, b, words[k + 2], 17, 0x242070db); b = transform(f, b, c, d, a, words[k + 3], 22, 0xc1bdceee);
+    a = transform(f, a, b, c, d, words[k + 4], 7, 0xf57c0faf); d = transform(f, d, a, b, c, words[k + 5], 12, 0x4787c62a); c = transform(f, c, d, a, b, words[k + 6], 17, 0xa8304613); b = transform(f, b, c, d, a, words[k + 7], 22, 0xfd469501);
+    a = transform(f, a, b, c, d, words[k + 8], 7, 0x698098d8); d = transform(f, d, a, b, c, words[k + 9], 12, 0x8b44f7af); c = transform(f, c, d, a, b, words[k + 10], 17, 0xffff5bb1); b = transform(f, b, c, d, a, words[k + 11], 22, 0x895cd7be);
+    a = transform(f, a, b, c, d, words[k + 12], 7, 0x6b901122); d = transform(f, d, a, b, c, words[k + 13], 12, 0xfd987193); c = transform(f, c, d, a, b, words[k + 14], 17, 0xa679438e); b = transform(f, b, c, d, a, words[k + 15], 22, 0x49b40821);
+    a = transform(g, a, b, c, d, words[k + 1], 5, 0xf61e2562); d = transform(g, d, a, b, c, words[k + 6], 9, 0xc040b340); c = transform(g, c, d, a, b, words[k + 11], 14, 0x265e5a51); b = transform(g, b, c, d, a, words[k + 0], 20, 0xe9b6c7aa);
+    a = transform(g, a, b, c, d, words[k + 5], 5, 0xd62f105d); d = transform(g, d, a, b, c, words[k + 10], 9, 0x02441453); c = transform(g, c, d, a, b, words[k + 15], 14, 0xd8a1e681); b = transform(g, b, c, d, a, words[k + 4], 20, 0xe7d3fbc8);
+    a = transform(g, a, b, c, d, words[k + 9], 5, 0x21e1cde6); d = transform(g, d, a, b, c, words[k + 14], 9, 0xc33707d6); c = transform(g, c, d, a, b, words[k + 3], 14, 0xf4d50d87); b = transform(g, b, c, d, a, words[k + 8], 20, 0x455a14ed);
+    a = transform(g, a, b, c, d, words[k + 13], 5, 0xa9e3e905); d = transform(g, d, a, b, c, words[k + 2], 9, 0xfcefa3f8); c = transform(g, c, d, a, b, words[k + 7], 14, 0x676f02d9); b = transform(g, b, c, d, a, words[k + 12], 20, 0x8d2a4c8a);
+    a = transform(h, a, b, c, d, words[k + 5], 4, 0xfffa3942); d = transform(h, d, a, b, c, words[k + 8], 11, 0x8771f681); c = transform(h, c, d, a, b, words[k + 11], 16, 0x6d9d6122); b = transform(h, b, c, d, a, words[k + 14], 23, 0xfde5380c);
+    a = transform(h, a, b, c, d, words[k + 1], 4, 0xa4beea44); d = transform(h, d, a, b, c, words[k + 4], 11, 0x4bdecfa9); c = transform(h, c, d, a, b, words[k + 7], 16, 0xf6bb4b60); b = transform(h, b, c, d, a, words[k + 10], 23, 0xbebfbc70);
+    a = transform(h, a, b, c, d, words[k + 13], 4, 0x289b7ec6); d = transform(h, d, a, b, c, words[k + 0], 11, 0xeaa127fa); c = transform(h, c, d, a, b, words[k + 3], 16, 0xd4ef3085); b = transform(h, b, c, d, a, words[k + 6], 23, 0x04881d05);
+    a = transform(h, a, b, c, d, words[k + 9], 4, 0xd9d4d039); d = transform(h, d, a, b, c, words[k + 12], 11, 0xe6db99e5); c = transform(h, c, d, a, b, words[k + 15], 16, 0x1fa27cf8); b = transform(h, b, c, d, a, words[k + 2], 23, 0xc4ac5665);
+    a = transform(i, a, b, c, d, words[k + 0], 6, 0xf4292244); d = transform(i, d, a, b, c, words[k + 7], 10, 0x432aff97); c = transform(i, c, d, a, b, words[k + 14], 15, 0xab9423a7); b = transform(i, b, c, d, a, words[k + 5], 21, 0xfc93a039);
+    a = transform(i, a, b, c, d, words[k + 12], 6, 0x655b59c3); d = transform(i, d, a, b, c, words[k + 3], 10, 0x8f0ccc92); c = transform(i, c, d, a, b, words[k + 10], 15, 0xffeff47d); b = transform(i, b, c, d, a, words[k + 1], 21, 0x85845dd1);
+    a = transform(i, a, b, c, d, words[k + 8], 6, 0x6fa87e4f); d = transform(i, d, a, b, c, words[k + 15], 10, 0xfe2ce6e0); c = transform(i, c, d, a, b, words[k + 6], 15, 0xa3014314); b = transform(i, b, c, d, a, words[k + 13], 21, 0x4e0811a1);
+    a = transform(i, a, b, c, d, words[k + 4], 6, 0xf7537e82); d = transform(i, d, a, b, c, words[k + 11], 10, 0xbd3af235); c = transform(i, c, d, a, b, words[k + 2], 15, 0x2ad7d2bb); b = transform(i, b, c, d, a, words[k + 9], 21, 0xeb86d391);
+    a = addUnsigned(a, aa);
+    b = addUnsigned(b, bb);
+    c = addUnsigned(c, cc);
+    d = addUnsigned(d, dd);
   }
-
   return [a, b, c, d].map((value) => {
     let output = '';
-    for (let index = 0; index < 4; index += 1) output += ((value >> (index * 8)) & 0xff).toString(16).padStart(2, '0');
+    for (let index = 0; index < 4; index += 1) output += ((value >>> (index * 8)) & 0xff).toString(16).padStart(2, '0');
     return output;
-  }).join('');
+  }).join('').toLowerCase();
 }
 
 function id(prefix) {
