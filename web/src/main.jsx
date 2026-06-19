@@ -98,6 +98,8 @@ function App() {
   const rememberedLogin = loadRememberedLogin();
   const [snapshot, setSnapshot] = useState(store.snapshot());
   const isAdminPath = window.location.pathname.startsWith('/admin');
+  const hasSavedSession = Boolean(store.api?.getUserId?.());
+  const [booting, setBooting] = useState(Boolean(store.bootstrap && hasSavedSession));
   const [screen, setScreen] = useState(() => getInitialScreen(snapshot.currentUser, isAdminPath));
   const [userAuthMode, setUserAuthMode] = useState('login');
   const [activeTab, setActiveTab] = useState('practice');
@@ -116,14 +118,18 @@ function App() {
   const publishedBanks = snapshot.banks.filter((bank) => bank.status === 'published');
 
   useEffect(() => {
-    if (!store.bootstrap) return;
+    if (!store.bootstrap) {
+      setBooting(false);
+      return;
+    }
     store.bootstrap()
       .then(() => {
         const next = store.snapshot();
         setSnapshot(next);
         setScreen(getInitialScreen(next.currentUser, isAdminPath));
       })
-      .catch((error) => console.warn('bootstrap failed', error));
+      .catch((error) => console.warn('bootstrap failed', error))
+      .finally(() => setBooting(false));
   }, []);
 
   useEffect(() => {
@@ -248,6 +254,7 @@ function App() {
   }
 
   if (screen === 'login') {
+    if (booting) return <BootScreen text="正在进入题库练习平台" />;
     return (
       <main className="auth-page">
         <section className="auth-card">
@@ -278,6 +285,7 @@ function App() {
   }
 
   if (screen === 'admin-login') {
+    if (booting) return <BootScreen text="正在进入管理后台" />;
     return (
       <main className="auth-page">
         <section className="auth-card">
@@ -423,6 +431,21 @@ function Shell({ title, currentUser, tabs, activeTab, onTab, onLogout, children 
         {children}
       </section>
     </div>
+  );
+}
+
+function BootScreen({ text }) {
+  return (
+    <main className="boot-page">
+      <section className="boot-card">
+        <div className="brand-mark">题</div>
+        <div>
+          <h1>{text}</h1>
+          <p>正在恢复登录状态，请稍候。</p>
+        </div>
+        <span className="boot-spinner" />
+      </section>
+    </main>
   );
 }
 
