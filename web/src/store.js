@@ -345,8 +345,25 @@ export function createStore() {
       save();
       return output;
     },
-    createOrder(planId) {
+    createOrder(planIdOrPayload) {
       const user = currentUser();
+      const payload = typeof planIdOrPayload === 'string' ? { planId: planIdOrPayload } : (planIdOrPayload || {});
+      let planId = payload.planId;
+      if (!planId && payload.bankId) {
+        const bank = state.banks.find((item) => item.id === payload.bankId);
+        planId = `plan-bank-${payload.bankId}`;
+        if (bank && !state.plans.some((item) => item.id === planId)) {
+          state.plans.push({
+            id: planId,
+            name: `${bank.name} 单题库授权`,
+            type: 'bank',
+            bankId: bank.id,
+            durationDays: 365,
+            price: Number(bank.price) || 0,
+            enabled: true
+          });
+        }
+      }
       const plan = state.plans.find((item) => item.id === planId);
       if (!user || !plan) return { ok: false, message: '无法创建订单' };
       const order = {
@@ -356,7 +373,7 @@ export function createStore() {
         planId: plan.id,
         amount: plan.price,
         status: 'pending',
-        channel: 'reserved-payment',
+        channel: payload.channel || 'reserved-payment',
         createdAt: now(),
         paidAt: 0
       };

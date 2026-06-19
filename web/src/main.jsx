@@ -414,6 +414,17 @@ function BankMarket({ banks, joinedIds, store, refresh, onOpen, onProfile }) {
     }
   }
 
+  async function buyBank(bank, channel = 'alipay') {
+    const result = await store.createOrder({ bankId: bank.id, channel });
+    refresh();
+    if (!result.ok) {
+      alert(result.message || '创建订单失败');
+      return;
+    }
+    alert(`已生成${channel === 'wechat' ? '微信' : '支付宝'}待支付订单：${result.order.orderNo}`);
+    onProfile();
+  }
+
   return (
     <div className="page-stack">
       <div className="section-title"><h3>题库中心</h3><p>管理员发布的题库会显示在这里，用户加入后才会出现在练习页。</p></div>
@@ -429,9 +440,16 @@ function BankMarket({ banks, joinedIds, store, refresh, onOpen, onProfile }) {
             {!bank.hasAccess && <p className="lock-note"><Lock size={15} /> 需要激活码或后续支付解锁</p>}
             <div className="card-actions">
               <button className="ghost-btn" onClick={() => onOpen(bank)}>详情</button>
-              <button className="primary-btn small" disabled={joinedIds.includes(bank.id)} onClick={() => join(bank)}>
-                {joinedIds.includes(bank.id) ? '已加入' : bank.hasAccess ? '加入' : '去解锁'}
-              </button>
+              {bank.hasAccess ? (
+                <button className="primary-btn small" disabled={joinedIds.includes(bank.id)} onClick={() => join(bank)}>
+                  {joinedIds.includes(bank.id) ? '已加入' : '加入'}
+                </button>
+              ) : (
+                <>
+                  <button className="primary-btn small" onClick={() => buyBank(bank, 'alipay')}>支付宝购买</button>
+                  <button className="ghost-btn" onClick={() => buyBank(bank, 'wechat')}>微信购买</button>
+                </>
+              )}
             </div>
           </article>
         ))}
@@ -1359,16 +1377,21 @@ function AdminLogs({ snapshot, store, refresh }) {
 }
 
 function AdminOrders({ snapshot, store, refresh }) {
+  useEffect(() => {
+    if (store.refreshOrders) store.refreshOrders().then(refresh).catch((error) => console.warn('refresh orders failed', error));
+  }, []);
+
   return (
     <div className="page-stack">
       <div className="section-title"><h3>订单记录</h3><p>当前是支付预留订单，后续接入真实支付后由支付回调自动标记已支付。</p></div>
       <Panel>
         <div className="table-list">
+          {!snapshot.orders.length && <div><span>暂无订单</span><span>用户购买题库或会员后会显示在这里</span><strong>-</strong></div>}
           {snapshot.orders.slice().reverse().map((item) => (
             <div key={item.id}>
-              <span>{item.userName}</span>
-              <span>{item.planName} · ¥{item.amount}</span>
-              <strong>{item.status === 'paid' ? '已支付' : <button className="mini-btn" onClick={() => { store.markOrderPaid(item.id); refresh(); }}>标记支付</button>}</strong>
+              <span>{item.userName || item.userPhone || item.userId}</span>
+              <span>{item.planName} · ¥{item.amount} · {payChannelText(item.channel)}</span>
+              <strong>{item.status === 'paid' ? '已支付' : <button className="mini-btn" onClick={async () => { await store.markOrderPaid(item.id); refresh(); }}>标记支付</button>}</strong>
             </div>
           ))}
         </div>
@@ -1419,17 +1442,17 @@ function Profile({ snapshot, store, refresh, onLogout }) {
   const userGrants = snapshot.entitlements[snapshot.currentUser.id] || [];
   const myBanks = snapshot.banks.filter((bank) => snapshot.userBankIds.includes(bank.id));
 
-  function redeem() {
-    const result = store.redeemActivationCode(code);
+  async function redeem() {
+    const result = await store.redeemActivationCode(code);
     refresh();
     alert(result.message);
     if (result.ok) setCode('');
   }
 
-  function createOrder(planId) {
-    const result = store.createOrder(planId);
+  async function createOrder(planId, channel = 'alipay') {
+    const result = await store.createOrder({ planId, channel });
     refresh();
-    alert(result.ok ? `已生成预留订单：${result.order.orderNo}。后续接入收款码或支付接口后可继续完成支付。` : result.message);
+    alert(result.ok ? `已生成${channel === 'wechat' ? '微信' : '支付宝'}待支付订单：${result.order.orderNo}` : result.message);
   }
 
   return (
@@ -1463,7 +1486,10 @@ function Profile({ snapshot, store, refresh, onLogout }) {
               <strong>{plan.name}</strong>
               <span>¥{plan.price}</span>
               <p>{plan.type === 'membership' ? `${plan.durationDays} 天内解锁全部付费题库` : `${plan.durationDays} 天单题库授权`}</p>
-              <button className="ghost-btn" onClick={() => createOrder(plan.id)}>支付接口预留</button>
+              <div className="button-row compact">
+                <button className="primary-btn small" onClick={() => createOrder(plan.id, 'alipay')}>支付宝</button>
+                <button className="ghost-btn" onClick={() => createOrder(plan.id, 'wechat')}>微信</button>
+              </div>
             </article>
           ))}
         </div>
@@ -1613,9 +1639,21 @@ function actionLabel(action) {
     'question.create': '新增题目',
     'question.update': '更新题目',
     'question.delete': '删除题目',
-    'activation_codes.create': '生成激活码'
+    'activation_codes.create': '生成激活码',
+    'order.mark_paid': '确认订单支付'
   };
   return labels[action] || action || '操作';
+}
+
+function payChannelText(channel) {
+  const labels = {
+    alipay: '支付宝',
+    wechat: '微信',
+    'activation-code': '激活码',
+    'manual-admin': '后台确认',
+    'reserved-payment': '预留支付'
+  };
+  return labels[channel] || channel || '支付';
 }
 
 async function extractDocxText(file) {

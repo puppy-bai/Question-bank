@@ -37,7 +37,7 @@ export function createCloudflareStore() {
         chapterCount: bank.chapterCount ?? bank.chapter_count ?? 0,
         accessType: bank.accessType || bank.access_type || 'free',
         joined: Boolean(bank.joined),
-        hasAccess: (bank.accessType || bank.access_type) === 'free' || Boolean(bank.joined)
+        hasAccess: bank.hasAccess ?? (bank.has_access !== undefined ? Boolean(bank.has_access) : (bank.accessType || bank.access_type) === 'free')
       })),
       userBankIds: state.userBankIds,
       stats: {
@@ -52,6 +52,19 @@ export function createCloudflareStore() {
     const result = await api.listBanks();
     state.banks = (result.banks || []).map(mapBankRow);
     state.userBankIds = state.banks.filter((bank) => bank.joined).map((bank) => bank.id);
+  }
+
+  async function refreshOrders() {
+    if (!state.currentUser?.id) return;
+    if (state.currentUser.role === 'admin') {
+      const result = await api.listAdminOrders();
+      state.orders = result.orders || [];
+      return;
+    }
+    const result = await api.listUserOrders();
+    state.orders = result.orders || [];
+    state.entitlementsView = result.entitlements || [];
+    state.entitlements = { [state.currentUser.id]: state.entitlementsView };
   }
 
   async function ensureQuestions(bankId) {
@@ -74,6 +87,7 @@ export function createCloudflareStore() {
       state.currentUser = result.user;
       api.setSession(result.user.id, '');
       await refreshBanks();
+      await refreshOrders();
       return result.user;
     },
     async loginUser(phone, password) {
@@ -81,6 +95,7 @@ export function createCloudflareStore() {
       state.currentUser = result.user;
       api.setSession(result.user.id, '');
       await refreshBanks();
+      await refreshOrders();
       return result.user;
     },
     async loginAdmin(phone, password) {
@@ -92,6 +107,7 @@ export function createCloudflareStore() {
       state.users = users.users || [];
       const admins = await api.listAdminAccounts();
       state.adminAccounts = admins.admins || [];
+      await refreshOrders();
       return true;
     },
     async refreshAdminAccounts() {
@@ -126,6 +142,10 @@ export function createCloudflareStore() {
       state.adminLogs = result.logs || [];
       return state.adminLogs;
     },
+    async refreshOrders() {
+      await refreshOrders();
+      return state.orders;
+    },
     logout() {
       api.clearSession();
       state.currentUser = null;
@@ -133,7 +153,7 @@ export function createCloudflareStore() {
     },
     hasAccess(bankId) {
       const bank = state.banks.find((item) => item.id === bankId);
-      return !bank || bank.accessType === 'free' || state.userBankIds.includes(bankId);
+      return !bank || bank.accessType === 'free' || Boolean(bank.hasAccess);
     },
     async joinBank(bankId) {
       await api.joinBank(bankId);
@@ -252,11 +272,23 @@ export function createCloudflareStore() {
       await refreshBanks();
       return true;
     },
-    redeemActivationCode() {
-      return { ok: false, message: '云端激活码兑换下一步接入' };
+    async redeemActivationCode(code) {
+      const result = await api.redeemActivationCode(code);
+      await refreshBanks();
+      await refreshOrders();
+      return { ok: true, message: result.message || '激活成功' };
     },
-    createOrder() {
-      return { ok: false, message: '云端订单下一步接入' };
+    async createOrder(planIdOrPayload) {
+      const payload = typeof planIdOrPayload === 'string' ? { planId: planIdOrPayload } : planIdOrPayload;
+      const result = await api.createOrder(payload);
+      await refreshOrders();
+      return { ok: true, order: result.order, payment: result.payment };
+    },
+    async markOrderPaid(orderId) {
+      await api.markOrderPaid(orderId);
+      await refreshOrders();
+      await refreshBanks();
+      return true;
     },
     grantUserPlan() {
       return false;
@@ -287,6 +319,7 @@ function mapBankRow(row) {
     chapterCount: row.chapter_count || row.chapterCount || 0,
     questionCount: row.question_count || row.questionCount || 0,
     joined: Boolean(row.joined),
+    hasAccess: row.hasAccess ?? (row.has_access !== undefined ? Boolean(row.has_access) : (row.access_type || row.accessType) === 'free'),
     chapters: (row.chapters || []).map((chapter) => ({
       id: chapter.id,
       bankId: chapter.bank_id,

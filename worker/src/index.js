@@ -23,9 +23,14 @@ export default {
       if (route === 'GET /api/admin/user-detail') return getAdminUserDetail(request, env);
       if (route === 'DELETE /api/admin/users') return deleteAdminUser(request, env);
       if (route === 'GET /api/admin/logs') return listAdminLogs(request, env);
+      if (route === 'GET /api/admin/orders') return listAdminOrders(request, env);
+      if (route === 'POST /api/admin/orders/mark-paid') return adminMarkOrderPaid(request, env);
       if (route === 'GET /api/banks') return listBanks(request, env);
       if (route === 'GET /api/questions') return listQuestions(request, env);
       if (route === 'POST /api/user-banks/join') return joinBank(request, env);
+      if (route === 'GET /api/user/orders') return listUserOrders(request, env);
+      if (route === 'POST /api/user/orders') return createUserOrder(request, env);
+      if (route === 'POST /api/user/activation-codes/redeem') return redeemActivationCode(request, env);
       if (route === 'POST /api/answers') return submitAnswer(request, env);
       if (route === 'POST /api/favorites/toggle') return toggleFavorite(request, env);
       if (route === 'POST /api/admin/import-bank') return importBank(request, env);
@@ -338,20 +343,60 @@ async function listAdminLogs(request, env) {
   return ok({ logs: (rows.results || []).map((row) => ({ ...row, detail: parseJson(row.detail_json, {}) })) }, env);
 }
 
+async function listAdminOrders(request, env) {
+  requireAdmin(request);
+  const rows = await env.DB.prepare(`
+    SELECT o.*, u.name AS user_name, u.phone AS user_phone, p.name AS plan_name, p.type AS plan_type, p.bank_id, p.duration_days
+    FROM orders o
+    JOIN users u ON u.id = o.user_id
+    JOIN plans p ON p.id = o.plan_id
+    ORDER BY o.created_at DESC
+    LIMIT 200
+  `).all();
+  return ok({ orders: (rows.results || []).map(readOrderRow) }, env);
+}
+
+async function adminMarkOrderPaid(request, env) {
+  requireAdmin(request);
+  const body = await readJson(request);
+  const orderId = String(body.orderId || body.id || '').trim();
+  if (!orderId) return fail('缺少订单 ID', 400, env);
+  const order = await env.DB.prepare('SELECT * FROM orders WHERE id = ?').bind(orderId).first();
+  if (!order) return fail('订单不存在', 404, env);
+  const result = await payOrder(env, order, 'manual-admin');
+  await recordAdminLog(request, env, {
+    action: 'order.mark_paid',
+    targetType: 'order',
+    targetId: orderId,
+    detail: { orderNo: order.order_no, amount: order.amount }
+  });
+  return ok({ ok: true, order: result.order, entitlement: result.entitlement }, env);
+}
+
 async function listBanks(request, env) {
   const userId = getUserId(request);
   const banks = await env.DB.prepare(`
     SELECT b.*,
       COUNT(DISTINCT c.id) AS chapter_count,
       COUNT(DISTINCT q.id) AS question_count,
-      CASE WHEN ub.user_id IS NULL THEN 0 ELSE 1 END AS joined
+      CASE WHEN ub.user_id IS NULL THEN 0 ELSE 1 END AS joined,
+      CASE
+        WHEN b.access_type = 'free' THEN 1
+        WHEN EXISTS (
+          SELECT 1 FROM entitlements e
+          WHERE e.user_id = ?
+            AND (e.expires_at IS NULL OR e.expires_at > ?)
+            AND (e.type = 'membership' OR e.bank_id = b.id)
+        ) THEN 1
+        ELSE 0
+      END AS has_access
     FROM banks b
     LEFT JOIN chapters c ON c.bank_id = b.id
     LEFT JOIN questions q ON q.bank_id = b.id
     LEFT JOIN user_banks ub ON ub.bank_id = b.id AND ub.user_id = ?
     GROUP BY b.id
     ORDER BY b.created_at DESC
-  `).bind(userId || '').all();
+  `).bind(userId || '', now(), userId || '').all();
   const rows = banks.results || [];
   const chapters = await env.DB.prepare('SELECT id, bank_id, name, sort_order FROM chapters ORDER BY sort_order ASC').all();
   const chaptersByBank = groupBy(chapters.results || [], 'bank_id');
@@ -371,10 +416,131 @@ async function joinBank(request, env) {
   const body = await readJson(request);
   const bankId = String(body.bankId || '').trim();
   if (!bankId) return fail('缺少题库 ID', 400, env);
+  const bank = await env.DB.prepare('SELECT * FROM banks WHERE id = ? AND status = ?').bind(bankId, 'published').first();
+  if (!bank) return fail('题库不存在或未发布', 404, env);
+  if (bank.access_type !== 'free' && !await hasEntitlement(env, userId, bankId)) return fail('该题库需要先购买或激活后才能加入', 403, env);
   await env.DB.prepare('INSERT OR IGNORE INTO user_banks (user_id, bank_id, created_at) VALUES (?, ?, ?)')
     .bind(userId, bankId, now())
     .run();
   return ok({ ok: true }, env);
+}
+
+async function listUserOrders(request, env) {
+  const userId = requireUserId(request);
+  const orders = await env.DB.prepare(`
+    SELECT o.*, p.name AS plan_name, p.type AS plan_type, p.bank_id, p.duration_days
+    FROM orders o
+    JOIN plans p ON p.id = o.plan_id
+    WHERE o.user_id = ?
+    ORDER BY o.created_at DESC
+    LIMIT 100
+  `).bind(userId).all();
+  const entitlements = await env.DB.prepare(`
+    SELECT e.*, p.name AS plan_name, b.name AS bank_name
+    FROM entitlements e
+    LEFT JOIN plans p ON p.id = e.plan_id
+    LEFT JOIN banks b ON b.id = e.bank_id
+    WHERE e.user_id = ? AND (e.expires_at IS NULL OR e.expires_at > ?)
+    ORDER BY e.created_at DESC
+  `).bind(userId, now()).all();
+  return ok({
+    orders: (orders.results || []).map(readOrderRow),
+    entitlements: (entitlements.results || []).map(readEntitlementRow)
+  }, env);
+}
+
+async function createUserOrder(request, env) {
+  const userId = requireUserId(request);
+  const body = await readJson(request);
+  const channel = normalizePayChannel(body.channel);
+  const bankId = String(body.bankId || body.bank_id || '').trim();
+  let planId = String(body.planId || body.plan_id || '').trim();
+
+  if (bankId && !planId) {
+    const bank = await env.DB.prepare('SELECT * FROM banks WHERE id = ? AND status = ?').bind(bankId, 'published').first();
+    if (!bank) return fail('题库不存在或未发布', 404, env);
+    if (bank.access_type === 'free' || Number(bank.price) <= 0) return fail('免费题库无需购买', 400, env);
+    if (await hasEntitlement(env, userId, bankId)) return fail('你已经拥有该题库权限', 409, env);
+    planId = await ensureBankPlan(env, bank);
+  }
+
+  if (!planId) return fail('缺少购买项目', 400, env);
+  const plan = await env.DB.prepare('SELECT * FROM plans WHERE id = ? AND enabled = 1').bind(planId).first();
+  if (!plan) return fail('套餐不存在或已下架', 404, env);
+  if (plan.type === 'bank' && plan.bank_id && await hasEntitlement(env, userId, plan.bank_id)) return fail('你已经拥有该题库权限', 409, env);
+
+  const timestamp = now();
+  const order = {
+    id: id('order'),
+    orderNo: makeOrderNo(),
+    userId,
+    planId: plan.id,
+    amount: Number(plan.price) || 0,
+    status: Number(plan.price) > 0 ? 'pending' : 'paid',
+    channel,
+    createdAt: timestamp,
+    paidAt: Number(plan.price) > 0 ? null : timestamp
+  };
+
+  await env.DB.prepare(`
+    INSERT INTO orders (id, order_no, user_id, plan_id, amount, status, channel, created_at, paid_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).bind(order.id, order.orderNo, order.userId, order.planId, order.amount, order.status, order.channel, order.createdAt, order.paidAt).run();
+
+  let entitlement = null;
+  if (order.status === 'paid') {
+    const paid = await payOrder(env, { id: order.id, plan_id: plan.id, user_id: userId, status: 'pending' }, 'free-order');
+    entitlement = paid.entitlement;
+  }
+
+  return ok({
+    ok: true,
+    order: { ...order, planName: plan.name, planType: plan.type, bankId: plan.bank_id, durationDays: plan.duration_days },
+    entitlement,
+    payment: buildPaymentPlaceholder(order, plan)
+  }, env);
+}
+
+async function redeemActivationCode(request, env) {
+  const userId = requireUserId(request);
+  const body = await readJson(request);
+  const code = String(body.code || '').trim().toUpperCase();
+  if (!code) return fail('请输入激活码', 400, env);
+  const activation = await env.DB.prepare(`
+    SELECT ac.*, p.name AS plan_name, p.type AS plan_type, p.bank_id, p.duration_days, p.price
+    FROM activation_codes ac
+    JOIN plans p ON p.id = ac.plan_id
+    WHERE ac.code = ?
+  `).bind(code).first();
+  if (!activation) return fail('激活码不存在', 404, env);
+  if (activation.used_by) return fail('激活码已被使用', 409, env);
+  const timestamp = now();
+  const order = {
+    id: id('order'),
+    orderNo: makeOrderNo(),
+    userId,
+    planId: activation.plan_id,
+    amount: Number(activation.price) || 0,
+    status: 'paid',
+    channel: 'activation-code',
+    createdAt: timestamp,
+    paidAt: timestamp
+  };
+  await env.DB.batch([
+    env.DB.prepare('UPDATE activation_codes SET used_by = ?, used_at = ? WHERE id = ?').bind(userId, timestamp, activation.id),
+    env.DB.prepare(`
+      INSERT INTO orders (id, order_no, user_id, plan_id, amount, status, channel, code, created_at, paid_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(order.id, order.orderNo, userId, activation.plan_id, order.amount, order.status, order.channel, code, timestamp, timestamp)
+  ]);
+  const entitlement = await grantEntitlement(env, userId, {
+    type: activation.plan_type,
+    bankId: activation.bank_id,
+    planId: activation.plan_id,
+    durationDays: activation.duration_days,
+    source: 'activation-code'
+  });
+  return ok({ ok: true, message: '激活成功', order, entitlement }, env);
 }
 
 async function submitAnswer(request, env) {
@@ -685,6 +851,128 @@ function readQuestionRow(row) {
   };
 }
 
+function readOrderRow(row) {
+  return {
+    id: row.id,
+    orderNo: row.order_no,
+    userId: row.user_id,
+    userName: row.user_name || '',
+    userPhone: row.user_phone || '',
+    planId: row.plan_id,
+    planName: row.plan_name || '套餐',
+    planType: row.plan_type || '',
+    bankId: row.bank_id || '',
+    durationDays: row.duration_days || 0,
+    amount: row.amount,
+    status: row.status,
+    channel: row.channel,
+    code: row.code || '',
+    createdAt: row.created_at,
+    paidAt: row.paid_at
+  };
+}
+
+function readEntitlementRow(row) {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    type: row.type,
+    bankId: row.bank_id || '',
+    bankName: row.bank_name || '',
+    planId: row.plan_id || '',
+    planName: row.plan_name || '授权',
+    source: row.source,
+    createdAt: row.created_at,
+    expiresAt: row.expires_at
+  };
+}
+
+async function hasEntitlement(env, userId, bankId) {
+  const timestamp = now();
+  const row = await env.DB.prepare(`
+    SELECT id FROM entitlements
+    WHERE user_id = ?
+      AND (expires_at IS NULL OR expires_at > ?)
+      AND (type = 'membership' OR bank_id = ?)
+    LIMIT 1
+  `).bind(userId, timestamp, bankId).first();
+  return Boolean(row);
+}
+
+async function ensureBankPlan(env, bank) {
+  const planId = `plan-bank-${bank.id}`;
+  const existing = await env.DB.prepare('SELECT id FROM plans WHERE id = ?').bind(planId).first();
+  if (!existing) {
+    await env.DB.prepare(`
+      INSERT INTO plans (id, name, type, bank_id, duration_days, price, enabled, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(planId, `${bank.name} 单题库授权`, 'bank', bank.id, 365, Number(bank.price) || 0, 1, now()).run();
+  } else {
+    await env.DB.prepare('UPDATE plans SET name = ?, bank_id = ?, price = ?, enabled = 1 WHERE id = ?')
+      .bind(`${bank.name} 单题库授权`, bank.id, Number(bank.price) || 0, planId)
+      .run();
+  }
+  return planId;
+}
+
+async function grantEntitlement(env, userId, grant) {
+  const timestamp = now();
+  const expiresAt = Number(grant.durationDays) > 0 ? timestamp + Number(grant.durationDays) * 86400000 : null;
+  const entitlement = {
+    id: id('grant'),
+    userId,
+    type: grant.type || 'bank',
+    bankId: grant.bankId || null,
+    planId: grant.planId || null,
+    source: grant.source || 'payment',
+    createdAt: timestamp,
+    expiresAt
+  };
+  await env.DB.prepare(`
+    INSERT INTO entitlements (id, user_id, type, bank_id, plan_id, source, created_at, expires_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).bind(entitlement.id, entitlement.userId, entitlement.type, entitlement.bankId, entitlement.planId, entitlement.source, entitlement.createdAt, entitlement.expiresAt).run();
+  return entitlement;
+}
+
+async function payOrder(env, order, source = 'payment') {
+  const fullOrder = await env.DB.prepare(`
+    SELECT o.*, p.name AS plan_name, p.type AS plan_type, p.bank_id, p.duration_days
+    FROM orders o
+    JOIN plans p ON p.id = o.plan_id
+    WHERE o.id = ?
+  `).bind(order.id).first();
+  if (!fullOrder) throw new HttpError('订单不存在', 404);
+  if (fullOrder.status === 'paid') return { order: readOrderRow(fullOrder), entitlement: null };
+  const timestamp = now();
+  await env.DB.prepare('UPDATE orders SET status = ?, channel = ?, paid_at = ? WHERE id = ?')
+    .bind('paid', source === 'manual-admin' ? 'manual-admin' : fullOrder.channel, timestamp, fullOrder.id)
+    .run();
+  const entitlement = await grantEntitlement(env, fullOrder.user_id, {
+    type: fullOrder.plan_type,
+    bankId: fullOrder.bank_id,
+    planId: fullOrder.plan_id,
+    durationDays: fullOrder.duration_days,
+    source
+  });
+  return { order: readOrderRow({ ...fullOrder, status: 'paid', paid_at: timestamp }), entitlement };
+}
+
+function normalizePayChannel(channel) {
+  const value = String(channel || 'alipay').trim();
+  return ['alipay', 'wechat', 'reserved-payment'].includes(value) ? value : 'alipay';
+}
+
+function buildPaymentPlaceholder(order, plan) {
+  return {
+    mode: 'reserved',
+    channel: order.channel,
+    message: '真实支付接口待接入；现在只生成待支付订单。',
+    subject: plan.name,
+    amount: order.amount
+  };
+}
+
 async function readJson(request) {
   if (!request.headers.get('content-type')?.includes('application/json')) return {};
   return request.json();
@@ -791,6 +1079,13 @@ function makeCode() {
   crypto.getRandomValues(bytes);
   const text = [...bytes].map((byte) => byte.toString(36).padStart(2, '0')).join('').slice(0, 8).toUpperCase();
   return `QB-${text.slice(0, 4)}-${text.slice(4, 8)}`;
+}
+
+function makeOrderNo() {
+  const bytes = new Uint8Array(4);
+  crypto.getRandomValues(bytes);
+  const suffix = [...bytes].map((byte) => byte.toString(16).padStart(2, '0')).join('').toUpperCase();
+  return `QB${Date.now()}${suffix}`;
 }
 
 function id(prefix) {
