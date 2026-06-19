@@ -31,6 +31,8 @@ export default {
       if (route === 'GET /api/user/orders') return listUserOrders(request, env);
       if (route === 'POST /api/user/orders') return createUserOrder(request, env);
       if (route === 'POST /api/user/activation-codes/redeem') return redeemActivationCode(request, env);
+      if (route === 'GET /api/pay/notify/epay') return handleEpayNotify(request, env);
+      if (route === 'GET /api/pay/return/epay') return handleEpayReturn(request, env);
       if (route === 'POST /api/answers') return submitAnswer(request, env);
       if (route === 'POST /api/favorites/toggle') return toggleFavorite(request, env);
       if (route === 'POST /api/admin/import-bank') return importBank(request, env);
@@ -497,7 +499,7 @@ async function createUserOrder(request, env) {
     ok: true,
     order: { ...order, planName: plan.name, planType: plan.type, bankId: plan.bank_id, durationDays: plan.duration_days },
     entitlement,
-    payment: buildPaymentPlaceholder(order, plan)
+    payment: await buildPayment(order, plan, request, env)
   }, env);
 }
 
@@ -541,6 +543,32 @@ async function redeemActivationCode(request, env) {
     source: 'activation-code'
   });
   return ok({ ok: true, message: '激活成功', order, entitlement }, env);
+}
+
+async function handleEpayNotify(request, env) {
+  const params = Object.fromEntries(new URL(request.url).searchParams.entries());
+  const verify = await verifyEpayParams(params, env);
+  if (!verify.ok) return textResponse('fail', 400, env);
+  if (!['TRADE_SUCCESS', 'TRADE_FINISHED'].includes(String(params.trade_status || ''))) return textResponse('fail', 400, env);
+
+  const orderNo = String(params.out_trade_no || '').trim();
+  const order = await env.DB.prepare('SELECT * FROM orders WHERE order_no = ?').bind(orderNo).first();
+  if (!order) return textResponse('fail', 404, env);
+  const paidAmount = Number(params.money || params.total_fee || 0);
+  if (Math.abs(Number(order.amount) - paidAmount) > 0.01) return textResponse('fail', 400, env);
+
+  if (order.status !== 'paid') await payOrder(env, order, 'epay');
+  return textResponse('success', 200, env);
+}
+
+async function handleEpayReturn(request, env) {
+  const params = Object.fromEntries(new URL(request.url).searchParams.entries());
+  const verify = await verifyEpayParams(params, env);
+  const target = new URL(env.FRONTEND_URL || 'https://www.090105.xyz');
+  target.pathname = '/';
+  target.searchParams.set('payment', verify.ok ? 'success' : 'failed');
+  if (params.out_trade_no) target.searchParams.set('order', params.out_trade_no);
+  return Response.redirect(target.toString(), 302);
 }
 
 async function submitAnswer(request, env) {
@@ -963,14 +991,72 @@ function normalizePayChannel(channel) {
   return ['alipay', 'wechat', 'reserved-payment'].includes(value) ? value : 'alipay';
 }
 
-function buildPaymentPlaceholder(order, plan) {
+async function buildPayment(order, plan, request, env) {
+  if (env.EPAY_GATEWAY && env.EPAY_PID && env.EPAY_KEY && Number(order.amount) > 0) {
+    const baseUrl = new URL(request.url);
+    const siteUrl = env.FRONTEND_URL || 'https://www.090105.xyz';
+    const notifyUrl = `${baseUrl.origin}/api/pay/notify/epay`;
+    const returnUrl = `${baseUrl.origin}/api/pay/return/epay`;
+    const params = {
+      pid: env.EPAY_PID,
+      type: order.channel === 'wechat' ? 'wxpay' : 'alipay',
+      out_trade_no: order.orderNo,
+      notify_url: notifyUrl,
+      return_url: returnUrl,
+      name: plan.name,
+      money: formatMoney(order.amount),
+      sitename: env.EPAY_SITE_NAME || '题库练习平台'
+    };
+    params.sign = epaySign(params, env.EPAY_KEY);
+    params.sign_type = 'MD5';
+    return {
+      mode: 'epay',
+      channel: order.channel,
+      gateway: normalizeGateway(env.EPAY_GATEWAY),
+      paymentUrl: `${normalizeGateway(env.EPAY_GATEWAY)}/submit.php?${new URLSearchParams(params).toString()}`,
+      notifyUrl,
+      returnUrl,
+      siteUrl,
+      subject: plan.name,
+      amount: order.amount
+    };
+  }
   return {
     mode: 'reserved',
     channel: order.channel,
-    message: '真实支付接口待接入；现在只生成待支付订单。',
+    message: '易支付参数未配置；现在只生成待支付订单。',
     subject: plan.name,
     amount: order.amount
   };
+}
+
+async function verifyEpayParams(params, env) {
+  if (!env.EPAY_KEY) return { ok: false, message: 'missing key' };
+  const sign = String(params.sign || '').toLowerCase();
+  if (!sign) return { ok: false, message: 'missing sign' };
+  const expected = epaySign(params, env.EPAY_KEY).toLowerCase();
+  return { ok: sign === expected, expected };
+}
+
+function epaySign(params, key) {
+  const text = Object.keys(params)
+    .filter((name) => params[name] !== undefined && params[name] !== null && params[name] !== '' && name !== 'sign' && name !== 'sign_type')
+    .sort()
+    .map((name) => `${name}=${params[name]}`)
+    .join('&');
+  return md5(`${text}${key}`);
+}
+
+function normalizeGateway(value) {
+  return String(value || '').replace(/\/+$/, '');
+}
+
+function formatMoney(amount) {
+  return (Math.round(Number(amount || 0) * 100) / 100).toFixed(2);
+}
+
+function textResponse(text, status, env) {
+  return withCors(new Response(text, { status, headers: { 'content-type': 'text/plain; charset=utf-8' } }), env);
 }
 
 async function readJson(request) {
@@ -1086,6 +1172,116 @@ function makeOrderNo() {
   crypto.getRandomValues(bytes);
   const suffix = [...bytes].map((byte) => byte.toString(16).padStart(2, '0')).join('').toUpperCase();
   return `QB${Date.now()}${suffix}`;
+}
+
+function md5(input) {
+  const utf8 = unescape(encodeURIComponent(String(input)));
+  const words = [];
+  for (let index = 0; index < utf8.length; index += 1) {
+    words[index >> 2] |= utf8.charCodeAt(index) << ((index % 4) * 8);
+  }
+  const bitLength = utf8.length * 8;
+  words[bitLength >> 5] |= 0x80 << (bitLength % 32);
+  words[(((bitLength + 64) >>> 9) << 4) + 14] = bitLength;
+
+  let a = 0x67452301;
+  let b = 0xefcdab89;
+  let c = 0x98badcfe;
+  let d = 0x10325476;
+
+  const rotate = (value, amount) => (value << amount) | (value >>> (32 - amount));
+  const add = (...values) => values.reduce((sum, value) => (sum + value) | 0, 0);
+  const cmn = (q, x, y, value, shift, constant) => add(rotate(add(x, q, value, constant), shift), y);
+  const ff = (x, y, z) => (x & y) | (~x & z);
+  const gg = (x, y, z) => (x & z) | (y & ~z);
+  const hh = (x, y, z) => x ^ y ^ z;
+  const ii = (x, y, z) => y ^ (x | ~z);
+
+  for (let offset = 0; offset < words.length; offset += 16) {
+    const oldA = a;
+    const oldB = b;
+    const oldC = c;
+    const oldD = d;
+
+    a = cmn(ff(b, c, d), a, b, words[offset], 7, -680876936);
+    d = cmn(ff(a, b, c), d, a, words[offset + 1], 12, -389564586);
+    c = cmn(ff(d, a, b), c, d, words[offset + 2], 17, 606105819);
+    b = cmn(ff(c, d, a), b, c, words[offset + 3], 22, -1044525330);
+    a = cmn(ff(b, c, d), a, b, words[offset + 4], 7, -176418897);
+    d = cmn(ff(a, b, c), d, a, words[offset + 5], 12, 1200080426);
+    c = cmn(ff(d, a, b), c, d, words[offset + 6], 17, -1473231341);
+    b = cmn(ff(c, d, a), b, c, words[offset + 7], 22, -45705983);
+    a = cmn(ff(b, c, d), a, b, words[offset + 8], 7, 1770035416);
+    d = cmn(ff(a, b, c), d, a, words[offset + 9], 12, -1958414417);
+    c = cmn(ff(d, a, b), c, d, words[offset + 10], 17, -42063);
+    b = cmn(ff(c, d, a), b, c, words[offset + 11], 22, -1990404162);
+    a = cmn(ff(b, c, d), a, b, words[offset + 12], 7, 1804603682);
+    d = cmn(ff(a, b, c), d, a, words[offset + 13], 12, -40341101);
+    c = cmn(ff(d, a, b), c, d, words[offset + 14], 17, -1502002290);
+    b = cmn(ff(c, d, a), b, c, words[offset + 15], 22, 1236535329);
+
+    a = cmn(gg(b, c, d), a, b, words[offset + 1], 5, -165796510);
+    d = cmn(gg(a, b, c), d, a, words[offset + 6], 9, -1069501632);
+    c = cmn(gg(d, a, b), c, d, words[offset + 11], 14, 643717713);
+    b = cmn(gg(c, d, a), b, c, words[offset], 20, -373897302);
+    a = cmn(gg(b, c, d), a, b, words[offset + 5], 5, -701558691);
+    d = cmn(gg(a, b, c), d, a, words[offset + 10], 9, 38016083);
+    c = cmn(gg(d, a, b), c, d, words[offset + 15], 14, -660478335);
+    b = cmn(gg(c, d, a), b, c, words[offset + 4], 20, -405537848);
+    a = cmn(gg(b, c, d), a, b, words[offset + 9], 5, 568446438);
+    d = cmn(gg(a, b, c), d, a, words[offset + 14], 9, -1019803690);
+    c = cmn(gg(d, a, b), c, d, words[offset + 3], 14, -187363961);
+    b = cmn(gg(c, d, a), b, c, words[offset + 8], 20, 1163531501);
+    a = cmn(gg(b, c, d), a, b, words[offset + 13], 5, -1444681467);
+    d = cmn(gg(a, b, c), d, a, words[offset + 2], 9, -51403784);
+    c = cmn(gg(d, a, b), c, d, words[offset + 7], 14, 1735328473);
+    b = cmn(gg(c, d, a), b, c, words[offset + 12], 20, -1926607734);
+
+    a = cmn(hh(b, c, d), a, b, words[offset + 5], 4, -378558);
+    d = cmn(hh(a, b, c), d, a, words[offset + 8], 11, -2022574463);
+    c = cmn(hh(d, a, b), c, d, words[offset + 11], 16, 1839030562);
+    b = cmn(hh(c, d, a), b, c, words[offset + 14], 23, -35309556);
+    a = cmn(hh(b, c, d), a, b, words[offset + 1], 4, -1530992060);
+    d = cmn(hh(a, b, c), d, a, words[offset + 4], 11, 1272893353);
+    c = cmn(hh(d, a, b), c, d, words[offset + 7], 16, -155497632);
+    b = cmn(hh(c, d, a), b, c, words[offset + 10], 23, -1094730640);
+    a = cmn(hh(b, c, d), a, b, words[offset + 13], 4, 681279174);
+    d = cmn(hh(a, b, c), d, a, words[offset], 11, -358537222);
+    c = cmn(hh(d, a, b), c, d, words[offset + 3], 16, -722521979);
+    b = cmn(hh(c, d, a), b, c, words[offset + 6], 23, 76029189);
+    a = cmn(hh(b, c, d), a, b, words[offset + 9], 4, -640364487);
+    d = cmn(hh(a, b, c), d, a, words[offset + 12], 11, -421815835);
+    c = cmn(hh(d, a, b), c, d, words[offset + 15], 16, 530742520);
+    b = cmn(hh(c, d, a), b, c, words[offset + 2], 23, -995338651);
+
+    a = cmn(ii(b, c, d), a, b, words[offset], 6, -198630844);
+    d = cmn(ii(a, b, c), d, a, words[offset + 7], 10, 1126891415);
+    c = cmn(ii(d, a, b), c, d, words[offset + 14], 15, -1416354905);
+    b = cmn(ii(c, d, a), b, c, words[offset + 5], 21, -57434055);
+    a = cmn(ii(b, c, d), a, b, words[offset + 12], 6, 1700485571);
+    d = cmn(ii(a, b, c), d, a, words[offset + 3], 10, -1894986606);
+    c = cmn(ii(d, a, b), c, d, words[offset + 10], 15, -1051523);
+    b = cmn(ii(c, d, a), b, c, words[offset + 1], 21, -2054922799);
+    a = cmn(ii(b, c, d), a, b, words[offset + 8], 6, 1873313359);
+    d = cmn(ii(a, b, c), d, a, words[offset + 15], 10, -30611744);
+    c = cmn(ii(d, a, b), c, d, words[offset + 6], 15, -1560198380);
+    b = cmn(ii(c, d, a), b, c, words[offset + 13], 21, 1309151649);
+    a = cmn(ii(b, c, d), a, b, words[offset + 4], 6, -145523070);
+    d = cmn(ii(a, b, c), d, a, words[offset + 11], 10, -1120210379);
+    c = cmn(ii(d, a, b), c, d, words[offset + 2], 15, 718787259);
+    b = cmn(ii(c, d, a), b, c, words[offset + 9], 21, -343485551);
+
+    a = add(a, oldA);
+    b = add(b, oldB);
+    c = add(c, oldC);
+    d = add(d, oldD);
+  }
+
+  return [a, b, c, d].map((value) => {
+    let output = '';
+    for (let index = 0; index < 4; index += 1) output += ((value >> (index * 8)) & 0xff).toString(16).padStart(2, '0');
+    return output;
+  }).join('');
 }
 
 function id(prefix) {

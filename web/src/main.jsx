@@ -421,6 +421,10 @@ function BankMarket({ banks, joinedIds, store, refresh, onOpen, onProfile }) {
       alert(result.message || '创建订单失败');
       return;
     }
+    if (result.payment?.paymentUrl) {
+      window.location.href = result.payment.paymentUrl;
+      return;
+    }
     alert(`已生成${channel === 'wechat' ? '微信' : '支付宝'}待支付订单：${result.order.orderNo}`);
     onProfile();
   }
@@ -1452,6 +1456,10 @@ function Profile({ snapshot, store, refresh, onLogout }) {
   async function createOrder(planId, channel = 'alipay') {
     const result = await store.createOrder({ planId, channel });
     refresh();
+    if (result.payment?.paymentUrl) {
+      window.location.href = result.payment.paymentUrl;
+      return;
+    }
     alert(result.ok ? `已生成${channel === 'wechat' ? '微信' : '支付宝'}待支付订单：${result.order.orderNo}` : result.message);
   }
 

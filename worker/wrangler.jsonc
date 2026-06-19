@@ -9,7 +9,11 @@
 	},
 	"vars": {
 		"ENVIRONMENT": "production",
-		"CORS_ORIGIN": "*"
+		"CORS_ORIGIN": "*",
+		"FRONTEND_URL": "https://www.090105.xyz",
+		"EPAY_GATEWAY": "https://game.gxzwgs.cn",
+		"EPAY_PID": "2056",
+		"EPAY_SITE_NAME": "题库练习平台"
 	},
 	"d1_databases": [
 		{
