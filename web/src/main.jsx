@@ -86,12 +86,12 @@ function App() {
   }, []);
 
   async function loginUser() {
-    if (!loginForm.name.trim() || !loginForm.phone.trim() || !loginForm.password.trim()) {
-      alert('\u8bf7\u8f93\u5165\u59d3\u540d\u3001\u624b\u673a\u53f7\u548c\u5bc6\u7801');
+    if (!loginForm.phone.trim() || !loginForm.password.trim()) {
+      alert('请输入手机号和密码');
       return;
     }
     try {
-      await store.loginUser(loginForm.name.trim(), loginForm.phone.trim(), loginForm.password.trim());
+      await store.loginUser(loginForm.phone.trim(), loginForm.password.trim());
       refresh();
       setScreen(isAdminPath ? 'admin-login' : 'app');
       setActiveTab('practice');
@@ -209,13 +209,13 @@ function App() {
               <button className={userAuthMode === 'login' ? 'active' : ''} onClick={() => setUserAuthMode('login')}>登录</button>
               <button className={userAuthMode === 'register' ? 'active' : ''} onClick={() => setUserAuthMode('register')}>注册</button>
             </div>
-            <input placeholder="姓名" value={loginForm.name} onChange={(event) => setLoginForm({ ...loginForm, name: event.target.value })} />
+            {userAuthMode === 'register' && <input placeholder="姓名" value={loginForm.name} onChange={(event) => setLoginForm({ ...loginForm, name: event.target.value })} />}
             <input placeholder="手机号" value={loginForm.phone} onChange={(event) => setLoginForm({ ...loginForm, phone: event.target.value })} />
             <input placeholder="密码（至少 6 位）" type="password" value={loginForm.password} onChange={(event) => setLoginForm({ ...loginForm, password: event.target.value })} />
             <button className="primary-btn" onClick={userAuthMode === 'login' ? loginUser : registerUser}>
               {userAuthMode === 'login' ? '登录并进入用户端' : '注册并进入用户端'}
             </button>
-            <p className="tiny">{userAuthMode === 'login' ? '已注册用户使用姓名、手机号和密码登录。' : '首次使用请先注册；一个手机号对应一个独立用户。'}</p>
+            <p className="tiny">{userAuthMode === 'login' ? '已注册用户使用手机号和密码登录。' : '首次使用请先注册；一个手机号对应一个独立用户。'}</p>
           </div>
         </section>
       </main>
@@ -733,6 +733,8 @@ function AdminImport({ store, refresh }) {
   const [form, setForm] = useState({ name: '', description: '', accessType: 'free', price: 0, text: '' });
   const [preview, setPreview] = useState(null);
   const [status, setStatus] = useState('');
+  const [batchResult, setBatchResult] = useState(null);
+  const [isBatchImporting, setIsBatchImporting] = useState(false);
 
   function parse() {
     const parsed = parseQuestionsFromText(form.text);
@@ -745,6 +747,8 @@ function AdminImport({ store, refresh }) {
     if (!file) return;
     const text = file.name.toLowerCase().endsWith('.docx') ? await extractDocxText(file) : await file.text();
     setForm((prev) => ({ ...prev, text, name: prev.name || file.name.replace(/\.[^.]+$/, '') }));
+    setPreview(null);
+    setBatchResult(null);
   }
 
   async function importBank() {
@@ -756,6 +760,60 @@ function AdminImport({ store, refresh }) {
     }
     refresh();
     setStatus(`导入成功：${result.count} 道题`);
+  }
+
+  async function readFolder(event) {
+    const files = Array.from(event.target.files || [])
+      .filter((file) => /\.(docx|txt|md|csv)$/i.test(file.name))
+      .sort((a, b) => a.webkitRelativePath.localeCompare(b.webkitRelativePath, 'zh-Hans-CN'));
+    event.target.value = '';
+    setBatchResult(null);
+    if (!files.length) {
+      setStatus('该文件夹中没有可导入的 Word/TXT/MD/CSV 文件');
+      return;
+    }
+
+    setIsBatchImporting(true);
+    const summary = [];
+    let successCount = 0;
+    let questionCount = 0;
+    try {
+      for (let index = 0; index < files.length; index += 1) {
+        const file = files[index];
+        setStatus(`正在批量导入 ${index + 1}/${files.length}：${file.name}`);
+        try {
+          const text = file.name.toLowerCase().endsWith('.docx') ? await extractDocxText(file) : await file.text();
+          const parsed = parseQuestionsFromText(text);
+          if (!parsed.questions.length) {
+            summary.push({ file: file.name, ok: false, message: '没有识别到可导入题目' });
+            continue;
+          }
+          const bankName = file.name.replace(/\.[^.]+$/, '');
+          const result = await store.importBank({
+            name: bankName,
+            description: form.description || `通过批量导入生成：${file.webkitRelativePath || file.name}`,
+            accessType: form.accessType,
+            price: form.price,
+            chapters: parsed.chapters,
+            questions: parsed.questions
+          });
+          if (!result.ok) {
+            summary.push({ file: file.name, ok: false, message: result.message || '导入失败' });
+            continue;
+          }
+          successCount += 1;
+          questionCount += result.count || parsed.questions.length;
+          summary.push({ file: file.name, ok: true, message: `${result.count || parsed.questions.length} 道题` });
+        } catch (error) {
+          summary.push({ file: file.name, ok: false, message: error.message || '解析失败' });
+        }
+      }
+      refresh();
+      setBatchResult(summary);
+      setStatus(`批量导入完成：成功 ${successCount}/${files.length} 个题库，共 ${questionCount} 道题`);
+    } finally {
+      setIsBatchImporting(false);
+    }
   }
 
   return (
@@ -770,6 +828,7 @@ function AdminImport({ store, refresh }) {
         <label className="block-label">题库简介<input value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} /></label>
         <div className="upload-row">
           <label className="file-btn"><Upload size={17} />选择 Word/TXT 文件<input type="file" accept=".docx,.txt,.md,.csv" onChange={readFile} /></label>
+          <label className={`file-btn ${isBatchImporting ? 'disabled' : ''}`}><FileUp size={17} />选择文件夹批量导入<input type="file" webkitdirectory="" directory="" multiple accept=".docx,.txt,.md,.csv" disabled={isBatchImporting} onChange={readFolder} /></label>
           <button className="ghost-btn" onClick={() => { store.importSampleBank(); refresh(); setStatus('已导入演示题库'); }}><Plus size={17} />导入演示题库</button>
         </div>
         <textarea className="import-textarea" value={form.text} onChange={(event) => setForm({ ...form, text: event.target.value })} placeholder={'可粘贴如下格式：\n第一章 基础知识\n1. 电流的单位是？（单选）\nA. 伏特\nB. 安培\n答案：B\n解析：安培是电流单位。'} />
@@ -779,6 +838,19 @@ function AdminImport({ store, refresh }) {
         </div>
         {status && <p className="success-text">{status}</p>}
       </Panel>
+      {batchResult && (
+        <Panel title="批量导入报告">
+          <div className="table-list">
+            {batchResult.map((item, index) => (
+              <div key={`${item.file}-${index}`}>
+                <span>{item.file}</span>
+                <strong className={item.ok ? 'success-text' : 'danger-text'}>{item.ok ? '成功' : '失败'}</strong>
+                <span>{item.message}</span>
+              </div>
+            ))}
+          </div>
+        </Panel>
+      )}
       {preview && (
         <Panel title="解析预览">
           <div className="table-list">

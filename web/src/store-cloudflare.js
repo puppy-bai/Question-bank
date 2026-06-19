@@ -76,8 +76,8 @@ export function createCloudflareStore() {
       await refreshBanks();
       return result.user;
     },
-    async loginUser(name, phone, password) {
-      const result = await api.loginUser(name, phone, password);
+    async loginUser(phone, password) {
+      const result = await api.loginUser(phone, password);
       state.currentUser = result.user;
       api.setSession(result.user.id, '');
       await refreshBanks();

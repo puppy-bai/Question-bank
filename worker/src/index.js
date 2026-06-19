@@ -77,14 +77,12 @@ async function register(request, env) {
 
 async function login(request, env) {
   const body = await readJson(request);
-  const name = String(body.name || '').trim();
   const phone = String(body.phone || '').trim();
   const password = String(body.password || '');
-  if (!name || !phone || !password) return fail('\u8bf7\u8f93\u5165\u59d3\u540d\u3001\u624b\u673a\u53f7\u548c\u5bc6\u7801', 400, env);
+  if (!phone || !password) return fail('\u8bf7\u8f93\u5165\u624b\u673a\u53f7\u548c\u5bc6\u7801', 400, env);
 
   const user = await env.DB.prepare('SELECT * FROM users WHERE phone = ? AND role = ?').bind(phone, 'user').first();
   if (!user) return fail('\u8d26\u53f7\u4e0d\u5b58\u5728\uff0c\u8bf7\u5148\u6ce8\u518c', 404, env);
-  if (String(user.name || '').trim() !== name) return fail('\u59d3\u540d\u548c\u624b\u673a\u53f7\u4e0d\u5339\u914d', 401, env);
   if (!user.password_hash) return fail('\u8be5\u8d26\u53f7\u5c1a\u672a\u8bbe\u7f6e\u5bc6\u7801\uff0c\u8bf7\u91cd\u65b0\u6ce8\u518c\u6216\u8054\u7cfb\u7ba1\u7406\u5458', 401, env);
   if (user.password_hash !== await hashPassword(password)) return fail('\u5bc6\u7801\u9519\u8bef', 401, env);
 

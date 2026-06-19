@@ -196,13 +196,11 @@ export function createStore() {
       save();
       return user;
     },
-    loginUser(name, phone, password) {
-      const cleanName = String(name || '').trim();
+    loginUser(phone, password) {
       const cleanPhone = String(phone || '').trim();
       const cleanPassword = String(password || '');
       const user = state.users.find((item) => item.phone === cleanPhone && item.role === 'user');
       if (!user) throw new Error('\u8d26\u53f7\u4e0d\u5b58\u5728\uff0c\u8bf7\u5148\u6ce8\u518c');
-      if (String(user.name || '').trim() !== cleanName) throw new Error('\u59d3\u540d\u548c\u624b\u673a\u53f7\u4e0d\u5339\u914d');
       if (user.password !== cleanPassword) throw new Error('\u5bc6\u7801\u9519\u8bef');
       ensureUserBuckets(user.id);
       state.currentUserId = user.id;

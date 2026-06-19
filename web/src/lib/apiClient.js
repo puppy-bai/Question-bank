@@ -39,7 +39,7 @@ export function createApiClient(options = {}) {
     },
     health: () => request('/api/health', { method: 'GET' }),
     registerUser: (name, phone, password) => request('/api/auth/register', { method: 'POST', body: JSON.stringify({ name, phone, password }) }),
-    loginUser: (name, phone, password) => request('/api/auth/login', { method: 'POST', body: JSON.stringify({ name, phone, password }) }),
+    loginUser: (phone, password) => request('/api/auth/login', { method: 'POST', body: JSON.stringify({ phone, password }) }),
     loginAdmin: (phone, password) => request('/api/admin/login', { method: 'POST', body: JSON.stringify({ phone, password }) }),
     listAdminAccounts: () => request('/api/admin/accounts', { method: 'GET' }),
     createAdminAccount: (payload) => request('/api/admin/accounts', { method: 'POST', body: JSON.stringify(payload) }),
