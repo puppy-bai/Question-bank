@@ -35,6 +35,7 @@ import './styles.css';
 
 const useCloudflare = import.meta.env.VITE_USE_CLOUDFLARE === 'true';
 const store = useCloudflare ? createCloudflareStore() : createStore();
+const rememberedLoginKey = 'question_bank_remember_login';
 
 const practiceModes = [
   { key: 'sequence', title: '顺序练习', icon: BookOpen },
@@ -59,7 +60,25 @@ function getInitialScreen(currentUser, isAdminPath) {
   return currentUser?.role === 'user' ? 'app' : 'login';
 }
 
+function loadRememberedLogin() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(rememberedLoginKey) || '{}');
+    return { remember: Boolean(saved.remember), phone: saved.phone || '', password: saved.password || '' };
+  } catch {
+    return { remember: false, phone: '', password: '' };
+  }
+}
+
+function saveRememberedLogin({ phone, password }) {
+  localStorage.setItem(rememberedLoginKey, JSON.stringify({ remember: true, phone, password }));
+}
+
+function clearRememberedLogin() {
+  localStorage.removeItem(rememberedLoginKey);
+}
+
 function App() {
+  const rememberedLogin = loadRememberedLogin();
   const [snapshot, setSnapshot] = useState(store.snapshot());
   const isAdminPath = window.location.pathname.startsWith('/admin');
   const [screen, setScreen] = useState(() => getInitialScreen(snapshot.currentUser, isAdminPath));
@@ -71,7 +90,8 @@ function App() {
   const [selectedBankId, setSelectedBankId] = useState('');
   const [practice, setPractice] = useState(null);
   const [examConfig, setExamConfig] = useState(null);
-  const [loginForm, setLoginForm] = useState({ name: '', phone: '', password: '' });
+  const [rememberLogin, setRememberLogin] = useState(rememberedLogin.remember);
+  const [loginForm, setLoginForm] = useState({ name: '', phone: rememberedLogin.phone, password: rememberedLogin.password });
 
   const refresh = () => setSnapshot(store.snapshot());
   const currentUser = snapshot.currentUser;
@@ -81,9 +101,17 @@ function App() {
   useEffect(() => {
     if (!store.bootstrap) return;
     store.bootstrap()
-      .then(() => refresh())
+      .then(() => {
+        const next = store.snapshot();
+        setSnapshot(next);
+        setScreen(getInitialScreen(next.currentUser, isAdminPath));
+      })
       .catch((error) => console.warn('bootstrap failed', error));
   }, []);
+
+  useEffect(() => {
+    if (rememberLogin) saveRememberedLogin({ phone: loginForm.phone, password: loginForm.password });
+  }, [rememberLogin, loginForm.phone, loginForm.password]);
 
   async function loginUser() {
     if (!loginForm.phone.trim() || !loginForm.password.trim()) {
@@ -92,6 +120,8 @@ function App() {
     }
     try {
       await store.loginUser(loginForm.phone.trim(), loginForm.password.trim());
+      if (rememberLogin) saveRememberedLogin({ phone: loginForm.phone.trim(), password: loginForm.password });
+      else clearRememberedLogin();
       refresh();
       setScreen(isAdminPath ? 'admin-login' : 'app');
       setActiveTab('practice');
@@ -107,6 +137,8 @@ function App() {
     }
     try {
       await store.registerUser(loginForm.name.trim(), loginForm.phone.trim(), loginForm.password.trim());
+      if (rememberLogin) saveRememberedLogin({ phone: loginForm.phone.trim(), password: loginForm.password });
+      else clearRememberedLogin();
       refresh();
       setScreen(isAdminPath ? 'admin-login' : 'app');
       setActiveTab('practice');
@@ -127,6 +159,8 @@ function App() {
       alert(error.message || '管理员登录失败');
       return;
     }
+    if (rememberLogin) saveRememberedLogin({ phone: loginForm.phone.trim() || 'admin', password: loginForm.password });
+    else clearRememberedLogin();
     refresh();
     setScreen('admin');
   }
@@ -212,6 +246,10 @@ function App() {
             {userAuthMode === 'register' && <input placeholder="姓名" value={loginForm.name} onChange={(event) => setLoginForm({ ...loginForm, name: event.target.value })} />}
             <input placeholder="手机号" value={loginForm.phone} onChange={(event) => setLoginForm({ ...loginForm, phone: event.target.value })} />
             <input placeholder="密码（至少 6 位）" type="password" value={loginForm.password} onChange={(event) => setLoginForm({ ...loginForm, password: event.target.value })} />
+            <label className="remember-row">
+              <input type="checkbox" checked={rememberLogin} onChange={(event) => { setRememberLogin(event.target.checked); if (!event.target.checked) clearRememberedLogin(); }} />
+              记住账号和密码
+            </label>
             <button className="primary-btn" onClick={userAuthMode === 'login' ? loginUser : registerUser}>
               {userAuthMode === 'login' ? '登录并进入用户端' : '注册并进入用户端'}
             </button>
@@ -233,6 +271,10 @@ function App() {
           <div className="form-stack">
             <input placeholder="管理员账号" value={loginForm.phone} onChange={(event) => setLoginForm({ ...loginForm, phone: event.target.value })} />
             <input placeholder="管理员密码" type="password" value={loginForm.password} onChange={(event) => setLoginForm({ ...loginForm, password: event.target.value })} />
+            <label className="remember-row">
+              <input type="checkbox" checked={rememberLogin} onChange={(event) => { setRememberLogin(event.target.checked); if (!event.target.checked) clearRememberedLogin(); }} />
+              记住账号和密码
+            </label>
             <button className="primary-btn" onClick={loginAdmin}>进入管理员后台</button>
             <p className="tiny">默认管理员账号：admin。管理员入口已与用户端分离，请通过 /admin 访问后台。</p>
           </div>

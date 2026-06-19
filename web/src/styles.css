@@ -35,6 +35,21 @@ input:disabled {
   opacity: 0.55;
 }
 
+.remember-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #46566d;
+  font-size: 14px;
+  font-weight: 750;
+}
+
+.remember-row input {
+  width: 16px;
+  height: 16px;
+  accent-color: #0f766e;
+}
+
 .auth-page {
   min-height: 100vh;
   display: grid;

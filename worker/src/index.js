@@ -12,6 +12,7 @@ export default {
       const route = `${request.method} ${url.pathname}`;
 
       if (route === 'GET /api/health') return ok({ ok: true, service: 'question-bank-api', requestId }, env);
+      if (route === 'GET /api/auth/session') return getSession(request, env);
       if (route === 'POST /api/auth/register') return register(request, env);
       if (route === 'POST /api/auth/login') return login(request, env);
       if (route === 'POST /api/admin/login') return adminLogin(request, env);
@@ -54,6 +55,15 @@ export default {
     }
   }
 };
+
+async function getSession(request, env) {
+  const userId = getUserId(request);
+  if (!userId) return fail('未登录', 401, env);
+  const user = await env.DB.prepare('SELECT * FROM users WHERE id = ?').bind(userId).first();
+  if (!user) return fail('登录已失效，请重新登录', 401, env);
+  if (user.role === 'admin') requireAdmin(request);
+  return ok({ user: publicUser(user) }, env);
+}
 
 async function register(request, env) {
   const body = await readJson(request);

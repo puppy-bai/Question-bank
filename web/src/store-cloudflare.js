@@ -80,7 +80,17 @@ export function createCloudflareStore() {
     api,
     snapshot,
     async bootstrap() {
+      if (api.getUserId()) {
+        try {
+          const result = await api.getSession();
+          state.currentUser = result.user;
+        } catch (error) {
+          api.clearSession();
+          state.currentUser = null;
+        }
+      }
       await refreshBanks();
+      await refreshOrders();
     },
     async registerUser(name, phone, password) {
       const result = await api.registerUser(name, phone, password);
