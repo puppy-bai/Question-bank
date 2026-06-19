@@ -82,12 +82,12 @@ function App() {
   }, []);
 
   async function loginUser() {
-    if (!loginForm.name.trim() || !loginForm.phone.trim()) {
-      alert('\u8bf7\u8f93\u5165\u59d3\u540d\u548c\u624b\u673a\u53f7');
+    if (!loginForm.name.trim() || !loginForm.phone.trim() || !loginForm.password.trim()) {
+      alert('\u8bf7\u8f93\u5165\u59d3\u540d\u3001\u624b\u673a\u53f7\u548c\u5bc6\u7801');
       return;
     }
     try {
-      await store.loginUser(loginForm.name.trim(), loginForm.phone.trim());
+      await store.loginUser(loginForm.name.trim(), loginForm.phone.trim(), loginForm.password.trim());
       refresh();
       setScreen('app');
       setActiveTab('practice');
@@ -97,12 +97,12 @@ function App() {
   }
 
   async function registerUser() {
-    if (!loginForm.name.trim() || !loginForm.phone.trim()) {
-      alert('\u8bf7\u8f93\u5165\u59d3\u540d\u548c\u624b\u673a\u53f7');
+    if (!loginForm.name.trim() || !loginForm.phone.trim() || !loginForm.password.trim()) {
+      alert('\u8bf7\u8f93\u5165\u59d3\u540d\u3001\u624b\u673a\u53f7\u548c\u5bc6\u7801');
       return;
     }
     try {
-      await store.registerUser(loginForm.name.trim(), loginForm.phone.trim());
+      await store.registerUser(loginForm.name.trim(), loginForm.phone.trim(), loginForm.password.trim());
       refresh();
       setScreen('app');
       setActiveTab('practice');
@@ -842,14 +842,28 @@ function AdminUsers({ snapshot, store, refresh }) {
   const normalUsers = snapshot.users.filter((item) => item.role === 'user');
   const [userId, setUserId] = useState(normalUsers[0]?.id || '');
   const [planId, setPlanId] = useState(snapshot.plans[0]?.id || '');
+  const selectedUser = normalUsers.find((user) => user.id === userId);
   return (
     <div className="page-stack">
-      <div className="section-title"><h3>用户授权</h3><p>可手动给用户开通会员或单题库授权，方便线下收费、机构团购和售后处理。</p></div>
-      <Panel>
+      <div className="section-title"><h3>用户管理</h3><p>查看已注册用户、加入题库、答题次数、错题和收藏数据，并可手动授权。</p></div>
+      <Panel title="用户信息">
+        {!normalUsers.length && <p className="muted">暂无注册用户。</p>}
+        <div className="table-list">
+          {normalUsers.map((user) => (
+            <div key={user.id}>
+              <span>{user.name} / {user.phone}</span>
+              <span>题库 {user.joined_bank_count ?? 0} ? 答题 {user.attempt_count ?? 0}</span>
+              <strong>错题 {user.wrong_count ?? 0} ? 收藏 {user.favorite_count ?? 0}</strong>
+            </div>
+          ))}
+        </div>
+      </Panel>
+      <Panel title="手动授权">
         <div className="config-grid">
-          <label>用户<select value={userId} onChange={(event) => setUserId(event.target.value)}>{normalUsers.map((user) => <option key={user.id} value={user.id}>{user.name} · {user.phone}</option>)}</select></label>
+          <label>用户<select value={userId} onChange={(event) => setUserId(event.target.value)}>{normalUsers.map((user) => <option key={user.id} value={user.id}>{user.name} / {user.phone}</option>)}</select></label>
           <label>套餐<select value={planId} onChange={(event) => setPlanId(event.target.value)}>{snapshot.plans.map((plan) => <option key={plan.id} value={plan.id}>{plan.name}</option>)}</select></label>
         </div>
+        {selectedUser && <p className="muted">当前用户：{selectedUser.name}，注册时间：{formatDate(selectedUser.created_at || selectedUser.createdAt)}</p>}
         <button className="primary-btn" onClick={() => { if (store.grantUserPlan(userId, planId)) { refresh(); alert('授权成功'); } }}>手动授权</button>
       </Panel>
       <Panel title="授权记录">

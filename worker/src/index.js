@@ -15,6 +15,7 @@ export default {
       if (route === 'POST /api/auth/register') return register(request, env);
       if (route === 'POST /api/auth/login') return login(request, env);
       if (route === 'POST /api/admin/login') return adminLogin(request, env);
+      if (route === 'GET /api/admin/users') return listAdminUsers(request, env);
       if (route === 'GET /api/banks') return listBanks(request, env);
       if (route === 'GET /api/questions') return listQuestions(request, env);
       if (route === 'POST /api/user-banks/join') return joinBank(request, env);
@@ -36,40 +37,72 @@ async function register(request, env) {
   const body = await readJson(request);
   const name = String(body.name || '').trim();
   const phone = String(body.phone || '').trim();
-  if (!name || !phone) return fail('\u8bf7\u8f93\u5165\u59d3\u540d\u548c\u624b\u673a\u53f7', 400, env);
+  const password = String(body.password || '');
+  if (!name || !phone || !password) return fail('\u8bf7\u8f93\u5165\u59d3\u540d\u3001\u624b\u673a\u53f7\u548c\u5bc6\u7801', 400, env);
+  if (password.length < 6) return fail('\u5bc6\u7801\u81f3\u5c11\u9700\u8981 6 \u4f4d', 400, env);
 
   const existing = await env.DB.prepare('SELECT * FROM users WHERE phone = ? AND role = ?').bind(phone, 'user').first();
-  if (existing) return fail('\u8be5\u624b\u673a\u53f7\u5df2\u6ce8\u518c\uff0c\u8bf7\u76f4\u63a5\u767b\u5f55', 409, env);
+  if (existing?.password_hash) return fail('\u8be5\u624b\u673a\u53f7\u5df2\u6ce8\u518c\uff0c\u8bf7\u76f4\u63a5\u767b\u5f55', 409, env);
 
   const timestamp = now();
-  const user = { id: id('user'), role: 'user', name, phone, created_at: timestamp, updated_at: timestamp };
-  await env.DB.prepare('INSERT INTO users (id, role, name, phone, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)')
-    .bind(user.id, user.role, user.name, user.phone, timestamp, timestamp)
+  const passwordHash = await hashPassword(password);
+  if (existing) {
+    await env.DB.prepare('UPDATE users SET name = ?, password_hash = ?, updated_at = ? WHERE id = ?')
+      .bind(name, passwordHash, timestamp, existing.id)
+      .run();
+    return ok({ user: publicUser({ ...existing, name, password_hash: passwordHash, updated_at: timestamp }), token: makeSessionToken(existing) }, env);
+  }
+  const user = { id: id('user'), role: 'user', name, phone, password_hash: passwordHash, created_at: timestamp, updated_at: timestamp };
+  await env.DB.prepare('INSERT INTO users (id, role, name, phone, password_hash, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+    .bind(user.id, user.role, user.name, user.phone, passwordHash, timestamp, timestamp)
     .run();
 
-  return ok({ user, token: makeSessionToken(user) }, env);
+  return ok({ user: publicUser(user), token: makeSessionToken(user) }, env);
 }
 
 async function login(request, env) {
   const body = await readJson(request);
   const name = String(body.name || '').trim();
   const phone = String(body.phone || '').trim();
-  if (!name || !phone) return fail('\u8bf7\u8f93\u5165\u59d3\u540d\u548c\u624b\u673a\u53f7', 400, env);
+  const password = String(body.password || '');
+  if (!name || !phone || !password) return fail('\u8bf7\u8f93\u5165\u59d3\u540d\u3001\u624b\u673a\u53f7\u548c\u5bc6\u7801', 400, env);
 
   const user = await env.DB.prepare('SELECT * FROM users WHERE phone = ? AND role = ?').bind(phone, 'user').first();
   if (!user) return fail('\u8d26\u53f7\u4e0d\u5b58\u5728\uff0c\u8bf7\u5148\u6ce8\u518c', 404, env);
   if (String(user.name || '').trim() !== name) return fail('\u59d3\u540d\u548c\u624b\u673a\u53f7\u4e0d\u5339\u914d', 401, env);
+  if (!user.password_hash) return fail('\u8be5\u8d26\u53f7\u5c1a\u672a\u8bbe\u7f6e\u5bc6\u7801\uff0c\u8bf7\u91cd\u65b0\u6ce8\u518c\u6216\u8054\u7cfb\u7ba1\u7406\u5458', 401, env);
+  if (user.password_hash !== await hashPassword(password)) return fail('\u5bc6\u7801\u9519\u8bef', 401, env);
 
-  return ok({ user, token: makeSessionToken(user) }, env);
+  return ok({ user: publicUser(user), token: makeSessionToken(user) }, env);
 }
 
 async function adminLogin(request, env) {
   const body = await readJson(request);
   const password = String(body.password || '');
   const expected = env.ADMIN_PASSWORD || 'admin123';
-  if (password !== expected) return fail('管理员密码错误', 401, env);
+  if (password !== expected) return fail('\u7ba1\u7406\u5458\u5bc6\u7801\u9519\u8bef', 401, env);
   const admin = await env.DB.prepare('SELECT * FROM users WHERE role = ? LIMIT 1').bind('admin').first();
-  return ok({ user: admin || { id: 'admin-default', role: 'admin', name: '管理员', phone: 'admin' }, token: 'admin-demo-token' }, env);
+  return ok({ user: publicUser(admin || { id: 'admin-default', role: 'admin', name: '\u7ba1\u7406\u5458', phone: 'admin' }), token: 'admin-demo-token' }, env);
+}
+
+async function listAdminUsers(request, env) {
+  requireAdmin(request);
+  const rows = await env.DB.prepare(`
+    SELECT u.id, u.role, u.name, u.phone, u.created_at, u.updated_at,
+      COUNT(DISTINCT ub.bank_id) AS joined_bank_count,
+      COUNT(DISTINCT a.id) AS attempt_count,
+      COUNT(DISTINCT wq.question_id) AS wrong_count,
+      COUNT(DISTINCT f.question_id) AS favorite_count
+    FROM users u
+    LEFT JOIN user_banks ub ON ub.user_id = u.id
+    LEFT JOIN attempts a ON a.user_id = u.id
+    LEFT JOIN wrong_questions wq ON wq.user_id = u.id AND wq.resolved_at IS NULL
+    LEFT JOIN favorites f ON f.user_id = u.id
+    WHERE u.role = 'user'
+    GROUP BY u.id
+    ORDER BY u.created_at DESC
+  `).all();
+  return ok({ users: rows.results || [] }, env);
 }
 
 async function listBanks(request, env) {
@@ -285,6 +318,17 @@ function groupBy(list, field) {
   }, {});
 }
 
+function publicUser(user) {
+  if (!user) return null;
+  const { password_hash, ...safeUser } = user;
+  return safeUser;
+}
+
+async function hashPassword(password) {
+  const bytes = new TextEncoder().encode(String(password));
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+}
 function makeSessionToken(user) {
   return `demo.${user.id}.${Date.now()}`;
 }

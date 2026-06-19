@@ -154,24 +154,29 @@ export function createStore() {
         })))
       };
     },
-    registerUser(name, phone) {
+    registerUser(name, phone, password) {
       const cleanName = String(name || '').trim();
       const cleanPhone = String(phone || '').trim();
+      const cleanPassword = String(password || '');
+      if (!cleanPassword) throw new Error('\u8bf7\u8f93\u5165\u5bc6\u7801');
+      if (cleanPassword.length < 6) throw new Error('\u5bc6\u7801\u81f3\u5c11\u9700\u8981 6 \u4f4d');
       const existing = state.users.find((item) => item.phone === cleanPhone && item.role === 'user');
-      if (existing) throw new Error('该手机号已注册，请直接登录');
-      const user = { id: id('user'), role: 'user', name: cleanName, phone: cleanPhone, createdAt: now() };
+      if (existing) throw new Error('\u8be5\u624b\u673a\u53f7\u5df2\u6ce8\u518c\uff0c\u8bf7\u76f4\u63a5\u767b\u5f55');
+      const user = { id: id('user'), role: 'user', name: cleanName, phone: cleanPhone, password: cleanPassword, createdAt: now() };
       state.users.push(user);
       ensureUserBuckets(user.id);
       state.currentUserId = user.id;
       save();
       return user;
     },
-    loginUser(name, phone) {
+    loginUser(name, phone, password) {
       const cleanName = String(name || '').trim();
       const cleanPhone = String(phone || '').trim();
+      const cleanPassword = String(password || '');
       const user = state.users.find((item) => item.phone === cleanPhone && item.role === 'user');
-      if (!user) throw new Error('账号不存在，请先注册');
-      if (String(user.name || '').trim() !== cleanName) throw new Error('姓名和手机号不匹配');
+      if (!user) throw new Error('\u8d26\u53f7\u4e0d\u5b58\u5728\uff0c\u8bf7\u5148\u6ce8\u518c');
+      if (String(user.name || '').trim() !== cleanName) throw new Error('\u59d3\u540d\u548c\u624b\u673a\u53f7\u4e0d\u5339\u914d');
+      if (user.password !== cleanPassword) throw new Error('\u5bc6\u7801\u9519\u8bef');
       ensureUserBuckets(user.id);
       state.currentUserId = user.id;
       save();

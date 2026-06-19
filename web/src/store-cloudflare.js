@@ -27,7 +27,7 @@ export function createCloudflareStore() {
     return {
       ...state,
       currentUserId: state.currentUser?.id || '',
-      users: state.currentUser ? [state.currentUser] : [],
+      users: state.users?.length ? state.users : (state.currentUser ? [state.currentUser] : []),
       banks: state.banks.map((bank) => ({
         ...bank,
         questionCount: bank.questionCount ?? bank.question_count ?? 0,
@@ -66,15 +66,15 @@ export function createCloudflareStore() {
     async bootstrap() {
       await refreshBanks();
     },
-    async registerUser(name, phone) {
-      const result = await api.registerUser(name, phone);
+    async registerUser(name, phone, password) {
+      const result = await api.registerUser(name, phone, password);
       state.currentUser = result.user;
       api.setSession(result.user.id, '');
       await refreshBanks();
       return result.user;
     },
-    async loginUser(name, phone) {
-      const result = await api.loginUser(name, phone);
+    async loginUser(name, phone, password) {
+      const result = await api.loginUser(name, phone, password);
       state.currentUser = result.user;
       api.setSession(result.user.id, '');
       await refreshBanks();
@@ -85,6 +85,8 @@ export function createCloudflareStore() {
       state.currentUser = result.user;
       api.setSession(result.user.id, result.token);
       await refreshBanks();
+      const users = await api.listAdminUsers();
+      state.users = users.users || [];
       return true;
     },
     logout() {
