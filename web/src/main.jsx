@@ -259,7 +259,7 @@ function App() {
           { key: 'import', label: '导入', icon: FileUp },
           { key: 'templates', label: '考试模板', icon: Settings },
           { key: 'codes', label: '激活码', icon: KeyRound },
-          { key: 'users', label: '用户授权', icon: Users },
+          { key: 'users', label: '用户管理', icon: Users },
           { key: 'orders', label: '订单', icon: CreditCard },
           { key: 'backup', label: '备份', icon: Download },
           { key: 'stats', label: '数据', icon: BarChart3 }
@@ -854,18 +854,50 @@ function AdminUsers({ snapshot, store, refresh }) {
   const [userId, setUserId] = useState(normalUsers[0]?.id || '');
   const [planId, setPlanId] = useState(snapshot.plans[0]?.id || '');
   const selectedUser = normalUsers.find((user) => user.id === userId);
+
+  async function deleteUser(user) {
+    const label = `${user.name || '未命名用户'} / ${user.phone || '无手机号'}`;
+    if (!confirm(`确定删除用户「${label}」吗？\n该用户的加入题库、答题记录、错题、收藏、授权和订单记录都会同步删除。`)) return;
+    const result = await store.deleteUser?.(user.id);
+    if (!result) {
+      alert('删除失败，当前环境暂不支持删除用户');
+      return;
+    }
+    if (user.id === userId) {
+      const nextUser = normalUsers.find((item) => item.id !== user.id);
+      setUserId(nextUser?.id || '');
+    }
+    if (store.refreshAdminUsers) await store.refreshAdminUsers();
+    refresh();
+    alert('用户已删除');
+  }
+
   return (
     <div className="page-stack">
       <div className="section-title"><h3>用户管理</h3><p>查看已注册用户、加入题库、答题次数、错题和收藏数据，并可手动授权。</p></div>
       <Panel title="用户信息">
         {!normalUsers.length && <p className="muted">暂无注册用户。</p>}
-        <div className="table-list">
+        <div className="user-admin-list">
           {normalUsers.map((user) => (
-            <div key={user.id}>
-              <span>{user.name} / {user.phone}</span>
-              <span>题库 {user.joined_bank_count ?? 0} ? 答题 {user.attempt_count ?? 0}</span>
-              <strong>错题 {user.wrong_count ?? 0} ? 收藏 {user.favorite_count ?? 0}</strong>
-            </div>
+            <article className="user-admin-row" key={user.id}>
+              <div className="user-main">
+                <strong>{user.name || '未命名用户'}</strong>
+                <span>{user.phone || '未填写手机号'}</span>
+              </div>
+              <div className="user-stats">
+                <span>题库 <strong>{user.joined_bank_count ?? 0}</strong></span>
+                <span>答题 <strong>{user.attempt_count ?? 0}</strong></span>
+                <span>错题 <strong>{user.wrong_count ?? 0}</strong></span>
+                <span>收藏 <strong>{user.favorite_count ?? 0}</strong></span>
+                <span>授权 <strong>{user.grant_count ?? 0}</strong></span>
+              </div>
+              <div className="user-extra">
+                <span>加入题库：{user.joined_bank_names || '暂无'}</span>
+                <span>注册时间：{formatDate(user.created_at || user.createdAt) || '未知'}</span>
+                <span>最近答题：{formatDate(user.last_attempt_at || user.lastAttemptAt) || '暂无'}</span>
+              </div>
+              <button className="danger-btn small" onClick={() => deleteUser(user)}><Trash2 size={16} />删除</button>
+            </article>
           ))}
         </div>
       </Panel>

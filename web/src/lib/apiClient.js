@@ -42,6 +42,7 @@ export function createApiClient(options = {}) {
     loginUser: (name, phone, password) => request('/api/auth/login', { method: 'POST', body: JSON.stringify({ name, phone, password }) }),
     loginAdmin: (password) => request('/api/admin/login', { method: 'POST', body: JSON.stringify({ password }) }),
     listAdminUsers: () => request('/api/admin/users', { method: 'GET' }),
+    deleteAdminUser: (userId) => request('/api/admin/users', { method: 'DELETE', body: JSON.stringify({ userId }) }),
     listBanks: () => request('/api/banks', { method: 'GET' }),
     listQuestions: (bankId) => request(`/api/questions?bankId=${encodeURIComponent(bankId)}`, { method: 'GET' }),
     joinBank: (bankId) => request('/api/user-banks/join', { method: 'POST', body: JSON.stringify({ bankId }) }),

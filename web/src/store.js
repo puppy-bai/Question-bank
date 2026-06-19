@@ -151,7 +151,24 @@ export function createStore() {
           userName: state.users.find((item) => item.id === userId)?.name || '用户',
           planName: state.plans.find((item) => item.id === grant.planId)?.name || '授权',
           bankName: state.banks.find((item) => item.id === grant.bankId)?.name || (grant.type === 'membership' ? '全部题库' : '')
-        })))
+        }))),
+        users: state.users.map((item) => {
+          const userBankIds = state.userBanks[item.id] || [];
+          const userAttempts = state.attempts.filter((attempt) => attempt.userId === item.id);
+          const joinedBanks = state.banks.filter((bank) => userBankIds.includes(bank.id));
+          return {
+            ...item,
+            joined_bank_count: userBankIds.length,
+            joined_bank_names: joinedBanks.map((bank) => bank.name).join('、'),
+            attempt_count: userAttempts.length,
+            wrong_count: Object.values(state.wrongQuestions[item.id] || {}).filter((wrong) => !wrong.resolvedAt).length,
+            favorite_count: (state.favorites[item.id] || []).length,
+            grant_count: (state.entitlements[item.id] || []).length,
+            last_attempt_at: Math.max(0, ...userAttempts.map((attempt) => attempt.createdAt || 0)),
+            created_at: item.created_at || item.createdAt,
+            updated_at: item.updated_at || item.updatedAt
+          };
+        })
       };
     },
     registerUser(name, phone, password) {
@@ -325,6 +342,29 @@ export function createStore() {
         createdAt: now(),
         paidAt: now()
       });
+      save();
+      return true;
+    },
+    deleteUser(userId) {
+      const user = state.users.find((item) => item.id === userId);
+      if (!user || user.role !== 'user') return false;
+      state.users = state.users.filter((item) => item.id !== userId);
+      delete state.userBanks[userId];
+      delete state.entitlements[userId];
+      delete state.wrongQuestions[userId];
+      delete state.favorites[userId];
+      state.attempts = state.attempts.filter((item) => item.userId !== userId);
+      state.orders = state.orders.filter((item) => item.userId !== userId);
+      state.activationCodes.forEach((code) => {
+        if (code.usedBy === userId) {
+          code.usedBy = '';
+          code.usedAt = 0;
+        }
+      });
+      state.feedback.forEach((item) => {
+        if (item.userId === userId) item.userId = '';
+      });
+      if (state.currentUserId === userId) state.currentUserId = '';
       save();
       return true;
     },

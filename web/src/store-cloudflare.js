@@ -89,6 +89,11 @@ export function createCloudflareStore() {
       state.users = users.users || [];
       return true;
     },
+    async refreshAdminUsers() {
+      const users = await api.listAdminUsers();
+      state.users = users.users || [];
+      return state.users;
+    },
     logout() {
       api.clearSession();
       state.currentUser = null;
@@ -176,6 +181,11 @@ export function createCloudflareStore() {
     },
     grantUserPlan() {
       return false;
+    },
+    async deleteUser(userId) {
+      await api.deleteAdminUser(userId);
+      state.users = state.users.filter((user) => user.id !== userId);
+      return true;
     },
     saveFeedback() {},
     exportState() {

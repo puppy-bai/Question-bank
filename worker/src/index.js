@@ -16,6 +16,7 @@ export default {
       if (route === 'POST /api/auth/login') return login(request, env);
       if (route === 'POST /api/admin/login') return adminLogin(request, env);
       if (route === 'GET /api/admin/users') return listAdminUsers(request, env);
+      if (route === 'DELETE /api/admin/users') return deleteAdminUser(request, env);
       if (route === 'GET /api/banks') return listBanks(request, env);
       if (route === 'GET /api/questions') return listQuestions(request, env);
       if (route === 'POST /api/user-banks/join') return joinBank(request, env);
@@ -89,20 +90,48 @@ async function listAdminUsers(request, env) {
   requireAdmin(request);
   const rows = await env.DB.prepare(`
     SELECT u.id, u.role, u.name, u.phone, u.created_at, u.updated_at,
-      COUNT(DISTINCT ub.bank_id) AS joined_bank_count,
-      COUNT(DISTINCT a.id) AS attempt_count,
-      COUNT(DISTINCT wq.question_id) AS wrong_count,
-      COUNT(DISTINCT f.question_id) AS favorite_count
+      (SELECT COUNT(*) FROM user_banks ub WHERE ub.user_id = u.id) AS joined_bank_count,
+      (SELECT COUNT(*) FROM attempts a WHERE a.user_id = u.id) AS attempt_count,
+      (SELECT COUNT(*) FROM wrong_questions wq WHERE wq.user_id = u.id AND wq.resolved_at IS NULL) AS wrong_count,
+      (SELECT COUNT(*) FROM favorites f WHERE f.user_id = u.id) AS favorite_count,
+      (SELECT COUNT(*) FROM entitlements e WHERE e.user_id = u.id) AS grant_count,
+      (SELECT MAX(a.created_at) FROM attempts a WHERE a.user_id = u.id) AS last_attempt_at,
+      COALESCE((
+        SELECT group_concat(b.name, '、')
+        FROM user_banks ub
+        JOIN banks b ON b.id = ub.bank_id
+        WHERE ub.user_id = u.id
+      ), '') AS joined_bank_names
     FROM users u
-    LEFT JOIN user_banks ub ON ub.user_id = u.id
-    LEFT JOIN attempts a ON a.user_id = u.id
-    LEFT JOIN wrong_questions wq ON wq.user_id = u.id AND wq.resolved_at IS NULL
-    LEFT JOIN favorites f ON f.user_id = u.id
     WHERE u.role = 'user'
-    GROUP BY u.id
     ORDER BY u.created_at DESC
   `).all();
   return ok({ users: rows.results || [] }, env);
+}
+
+async function deleteAdminUser(request, env) {
+  requireAdmin(request);
+  const body = await readJson(request);
+  const userId = String(body.userId || '').trim();
+  if (!userId) return fail('缺少用户 ID', 400, env);
+
+  const user = await env.DB.prepare('SELECT id, role FROM users WHERE id = ?').bind(userId).first();
+  if (!user) return fail('用户不存在', 404, env);
+  if (user.role !== 'user') return fail('不能删除管理员账号', 403, env);
+
+  await env.DB.batch([
+    env.DB.prepare('DELETE FROM user_banks WHERE user_id = ?').bind(userId),
+    env.DB.prepare('DELETE FROM attempts WHERE user_id = ?').bind(userId),
+    env.DB.prepare('DELETE FROM wrong_questions WHERE user_id = ?').bind(userId),
+    env.DB.prepare('DELETE FROM favorites WHERE user_id = ?').bind(userId),
+    env.DB.prepare('DELETE FROM entitlements WHERE user_id = ?').bind(userId),
+    env.DB.prepare('DELETE FROM orders WHERE user_id = ?').bind(userId),
+    env.DB.prepare('UPDATE activation_codes SET used_by = NULL, used_at = NULL WHERE used_by = ?').bind(userId),
+    env.DB.prepare('UPDATE feedback SET user_id = NULL WHERE user_id = ?').bind(userId),
+    env.DB.prepare('DELETE FROM users WHERE id = ?').bind(userId)
+  ]);
+
+  return ok({ ok: true, deletedUserId: userId }, env);
 }
 
 async function listBanks(request, env) {
@@ -284,7 +313,7 @@ function fail(message, status, env, extra = {}) {
 function withCors(response, env) {
   const headers = new Headers(response.headers);
   headers.set('access-control-allow-origin', env.CORS_ORIGIN || '*');
-  headers.set('access-control-allow-methods', 'GET,POST,OPTIONS');
+  headers.set('access-control-allow-methods', 'GET,POST,DELETE,OPTIONS');
   headers.set('access-control-allow-headers', 'content-type,authorization,x-user-id,x-admin-token');
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 }
