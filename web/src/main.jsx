@@ -118,7 +118,7 @@ function App() {
 
   async function loginAdmin() {
     try {
-      const ok = await store.loginAdmin(loginForm.password.trim());
+      const ok = await store.loginAdmin(loginForm.phone.trim() || 'admin', loginForm.password.trim());
       if (!ok) {
         alert('管理员密码错误，默认演示密码为 admin123');
         return;
@@ -231,9 +231,10 @@ function App() {
           <p>用于题库导入、题库管理、用户数据查看、授权和后台配置。</p>
 
           <div className="form-stack">
+            <input placeholder="管理员账号" value={loginForm.phone} onChange={(event) => setLoginForm({ ...loginForm, phone: event.target.value })} />
             <input placeholder="管理员密码" type="password" value={loginForm.password} onChange={(event) => setLoginForm({ ...loginForm, password: event.target.value })} />
             <button className="primary-btn" onClick={loginAdmin}>进入管理员后台</button>
-            <p className="tiny">管理员入口已与用户端分离，请通过 /admin 访问后台。</p>
+            <p className="tiny">默认管理员账号：admin。管理员入口已与用户端分离，请通过 /admin 访问后台。</p>
           </div>
         </section>
       </main>
@@ -254,6 +255,7 @@ function App() {
           { key: 'import', label: '导入', icon: FileUp },
           { key: 'templates', label: '考试模板', icon: Settings },
           { key: 'codes', label: '激活码', icon: KeyRound },
+          { key: 'admins', label: '管理员', icon: User },
           { key: 'users', label: '用户管理', icon: Users },
           { key: 'orders', label: '订单', icon: CreditCard },
           { key: 'backup', label: '备份', icon: Download },
@@ -268,6 +270,7 @@ function App() {
         {adminTab === 'import' && <AdminImport store={store} refresh={refresh} />}
         {adminTab === 'templates' && <AdminTemplates snapshot={snapshot} store={store} refresh={refresh} />}
         {adminTab === 'codes' && <AdminCodes snapshot={snapshot} store={store} refresh={refresh} />}
+        {adminTab === 'admins' && <AdminAccounts snapshot={snapshot} store={store} refresh={refresh} />}
         {adminTab === 'users' && <AdminUsers snapshot={snapshot} store={store} refresh={refresh} />}
         {adminTab === 'orders' && <AdminOrders snapshot={snapshot} store={store} refresh={refresh} />}
         {adminTab === 'backup' && <AdminBackup store={store} refresh={refresh} />}
@@ -699,9 +702,12 @@ function ResultScreen({ result, onExit }) {
 }
 
 function AdminBanks({ snapshot, store, refresh }) {
+  const [editingBankId, setEditingBankId] = useState('');
+  const editingBank = snapshot.banks.find((bank) => bank.id === editingBankId);
   return (
     <div className="page-stack">
       <div className="section-title"><h3>题库管理</h3><p>发布、隐藏、重命名、删除题库，并配置免费或付费属性。</p></div>
+      {editingBank && <BankEditor bank={editingBank} store={store} refresh={refresh} onClose={() => setEditingBankId('')} />}
       <div className="bank-grid">
         {snapshot.banks.map((bank) => (
           <article className="bank-card" key={bank.id}>
@@ -712,9 +718,9 @@ function AdminBanks({ snapshot, store, refresh }) {
             <p>{bank.description}</p>
             <div className="bank-meta">{bank.status === 'published' ? '已发布' : '已隐藏'} · {bank.chapterCount} 个章节 · {bank.questionCount} 题</div>
             <div className="card-actions">
-              <button className="ghost-btn" onClick={() => editBank(bank, store, refresh)}>编辑</button>
-              <button className="ghost-btn" onClick={() => { store.updateBank(bank.id, { status: bank.status === 'published' ? 'hidden' : 'published' }); refresh(); }}>{bank.status === 'published' ? '隐藏' : '发布'}</button>
-              <button className="danger-btn" onClick={() => { if (confirm('确定删除该题库及其题目吗？')) { store.deleteBank(bank.id); refresh(); } }}><Trash2 size={16} />删除</button>
+              <button className="ghost-btn" onClick={() => setEditingBankId(bank.id)}>管理</button>
+              <button className="ghost-btn" onClick={async () => { await store.updateBank(bank.id, { status: bank.status === 'published' ? 'hidden' : 'published' }); refresh(); }}>{bank.status === 'published' ? '隐藏' : '发布'}</button>
+              <button className="danger-btn" onClick={async () => { if (confirm('确定删除该题库及其章节、题目和用户记录吗？')) { await store.deleteBank(bank.id); refresh(); if (editingBankId === bank.id) setEditingBankId(''); } }}><Trash2 size={16} />删除</button>
             </div>
           </article>
         ))}
@@ -846,6 +852,82 @@ function AdminCodes({ snapshot, store, refresh }) {
   );
 }
 
+function AdminAccounts({ snapshot, store, refresh }) {
+  const [form, setForm] = useState({ name: '', phone: '', password: '', adminRole: 'operator' });
+  const admins = snapshot.adminAccounts || snapshot.users.filter((item) => item.role === 'admin');
+
+  useEffect(() => {
+    if (store.refreshAdminAccounts) {
+      store.refreshAdminAccounts().then(refresh).catch(() => {});
+    }
+  }, []);
+
+  async function createAdmin() {
+    if (!form.name.trim() || !form.phone.trim() || !form.password.trim()) {
+      alert('请填写管理员姓名、账号和密码');
+      return;
+    }
+    try {
+      await store.createAdminAccount(form);
+      setForm({ name: '', phone: '', password: '', adminRole: 'operator' });
+      refresh();
+      alert('管理员已创建');
+    } catch (error) {
+      alert(error.message || '创建失败');
+    }
+  }
+
+  async function toggleAdmin(admin) {
+    await store.updateAdminAccount(admin.id, { adminEnabled: Number(admin.admin_enabled ?? admin.adminEnabled ?? 1) ? 0 : 1 });
+    refresh();
+  }
+
+  async function resetPassword(admin) {
+    const password = prompt(`为 ${admin.name} 设置新密码（至少 6 位）`);
+    if (!password) return;
+    await store.updateAdminAccount(admin.id, { password });
+    refresh();
+    alert('密码已更新');
+  }
+
+  async function removeAdmin(admin) {
+    if (!confirm(`确定删除管理员「${admin.name}」吗？`)) return;
+    const ok = await store.deleteAdminAccount(admin.id);
+    if (!ok) alert('删除失败，默认管理员不能删除');
+    refresh();
+  }
+
+  return (
+    <div className="page-stack">
+      <div className="section-title"><h3>管理员账号</h3><p>创建多个后台账号，后续可继续细分题库、财务、客服等权限。</p></div>
+      <Panel title="新增管理员">
+        <div className="config-grid">
+          <label>姓名<input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} /></label>
+          <label>登录账号<input value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} placeholder="可填手机号或账号" /></label>
+          <label>初始密码<input type="password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} /></label>
+          <label>角色<select value={form.adminRole} onChange={(event) => setForm({ ...form, adminRole: event.target.value })}><option value="super_admin">超级管理员</option><option value="content_admin">题库管理员</option><option value="support">客服/运营</option><option value="operator">普通管理员</option></select></label>
+        </div>
+        <button className="primary-btn" onClick={createAdmin}>创建管理员</button>
+      </Panel>
+      <Panel title="管理员列表">
+        <div className="table-list admin-table">
+          {admins.map((admin) => (
+            <div key={admin.id}>
+              <span>{admin.name} / {admin.phone}</span>
+              <span>{adminRoleLabel(admin.admin_role || admin.adminRole)} · {Number(admin.admin_enabled ?? admin.adminEnabled ?? 1) ? '启用' : '停用'}</span>
+              <strong className="table-actions">
+                <button className="mini-btn" onClick={() => toggleAdmin(admin)}>{Number(admin.admin_enabled ?? admin.adminEnabled ?? 1) ? '停用' : '启用'}</button>
+                <button className="mini-btn" onClick={() => resetPassword(admin)}>改密</button>
+                <button className="mini-btn danger-mini" onClick={() => removeAdmin(admin)}>删除</button>
+              </strong>
+            </div>
+          ))}
+        </div>
+      </Panel>
+    </div>
+  );
+}
+
 function AdminUsers({ snapshot, store, refresh }) {
   const normalUsers = snapshot.users.filter((item) => item.role === 'user');
   const [userId, setUserId] = useState(normalUsers[0]?.id || '');
@@ -933,6 +1015,148 @@ function AdminUsers({ snapshot, store, refresh }) {
         </div>
       </Panel>
     </div>
+  );
+}
+
+function BankEditor({ bank, store, refresh, onClose }) {
+  const [form, setForm] = useState({
+    name: bank.name,
+    description: bank.description || '',
+    status: bank.status || 'published',
+    accessType: bank.accessType || 'free',
+    price: bank.price || 0
+  });
+  const [questions, setQuestions] = useState([]);
+  const [questionForm, setQuestionForm] = useState(null);
+  const [chapterName, setChapterName] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  async function loadQuestions() {
+    setLoading(true);
+    try {
+      const list = await store.getQuestions(bank.id);
+      setQuestions(list || []);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    setForm({ name: bank.name, description: bank.description || '', status: bank.status || 'published', accessType: bank.accessType || 'free', price: bank.price || 0 });
+    loadQuestions();
+  }, [bank.id]);
+
+  async function saveBank() {
+    await store.updateBank(bank.id, form);
+    refresh();
+    alert('题库信息已保存');
+  }
+
+  async function addChapter() {
+    if (!chapterName.trim()) return;
+    await store.createChapter({ bankId: bank.id, name: chapterName.trim() });
+    setChapterName('');
+    refresh();
+  }
+
+  async function renameChapter(chapter) {
+    const name = prompt('章节名称', chapter.name);
+    if (!name) return;
+    await store.updateChapter({ id: chapter.id, bankId: bank.id, name });
+    refresh();
+    await loadQuestions();
+  }
+
+  async function removeChapter(chapter) {
+    if (!confirm(`确定删除章节「${chapter.name}」及其全部题目吗？`)) return;
+    await store.deleteChapter(chapter.id, bank.id);
+    refresh();
+    await loadQuestions();
+  }
+
+  async function saveQuestion() {
+    if (!questionForm?.stem?.trim()) {
+      alert('请填写题干');
+      return;
+    }
+    const payload = {
+      ...questionForm,
+      bankId: bank.id,
+      answer: String(questionForm.answerText || '').split(/[,，、\s]+/).filter(Boolean),
+      options: parseOptionText(questionForm.optionsText)
+    };
+    if (questionForm.id) await store.updateQuestion(payload);
+    else await store.createQuestion(payload);
+    setQuestionForm(null);
+    refresh();
+    await loadQuestions();
+  }
+
+  return (
+    <Panel title={`管理题库：${bank.name}`}>
+      <div className="button-row editor-head">
+        <button className="text-btn" onClick={onClose}>关闭编辑器</button>
+        <button className="ghost-btn" onClick={loadQuestions}>{loading ? '加载中...' : '刷新题目'}</button>
+      </div>
+      <div className="config-grid">
+        <label>题库名称<input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} /></label>
+        <label>状态<select value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value })}><option value="published">已发布</option><option value="hidden">已隐藏</option></select></label>
+        <label>收费方式<select value={form.accessType} onChange={(event) => setForm({ ...form, accessType: event.target.value })}><option value="free">免费</option><option value="paid">付费/授权</option></select></label>
+        <label>价格<input type="number" value={form.price} onChange={(event) => setForm({ ...form, price: Number(event.target.value) || 0 })} /></label>
+      </div>
+      <label className="block-label">题库简介<input value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} /></label>
+      <div className="button-row"><button className="primary-btn" onClick={saveBank}>保存题库信息</button></div>
+
+      <div className="detail-grid">
+        <section>
+          <h4>章节管理</h4>
+          <div className="inline-form">
+            <input placeholder="新章节名称" value={chapterName} onChange={(event) => setChapterName(event.target.value)} />
+            <button className="primary-btn" onClick={addChapter}>新增章节</button>
+          </div>
+          <div className="table-list detail-table">
+            {bank.chapters.map((chapter) => (
+              <div key={chapter.id}>
+                <span>{chapter.name}</span>
+                <span>{questions.filter((item) => item.chapterId === chapter.id).length} 题</span>
+                <strong className="table-actions"><button className="mini-btn" onClick={() => renameChapter(chapter)}>改名</button><button className="mini-btn danger-mini" onClick={() => removeChapter(chapter)}>删除</button></strong>
+              </div>
+            ))}
+          </div>
+        </section>
+        <section>
+          <h4>题目编辑</h4>
+          <button className="primary-btn" disabled={!bank.chapters.length} onClick={() => setQuestionForm(emptyQuestionForm(bank))}>新增题目</button>
+          <div className="table-list question-admin-table">
+            {questions.slice(0, 30).map((question) => (
+              <div key={question.id}>
+                <span>{question.stem}</span>
+                <span>{typeLabels[question.type] || question.type} · {bank.chapters.find((item) => item.id === question.chapterId)?.name || '章节'}</span>
+                <strong className="table-actions"><button className="mini-btn" onClick={() => setQuestionForm(questionToForm(question))}>编辑</button><button className="mini-btn danger-mini" onClick={async () => { if (confirm('确定删除该题目吗？')) { await store.deleteQuestion(question.id, bank.id); refresh(); await loadQuestions(); } }}>删除</button></strong>
+              </div>
+            ))}
+          </div>
+        </section>
+      </div>
+
+      {questionForm && (
+        <div className="question-editor">
+          <h4>{questionForm.id ? '编辑题目' : '新增题目'}</h4>
+          <div className="config-grid">
+            <label>章节<select value={questionForm.chapterId} onChange={(event) => setQuestionForm({ ...questionForm, chapterId: event.target.value })}>{bank.chapters.map((chapter) => <option key={chapter.id} value={chapter.id}>{chapter.name}</option>)}</select></label>
+            <label>题型<select value={questionForm.type} onChange={(event) => setQuestionForm({ ...questionForm, type: event.target.value })}><option value="single">单选题</option><option value="multiple">多选题</option><option value="judge">判断题</option></select></label>
+            <label>答案<input placeholder="如 A 或 A B，判断题填 正确/错误" value={questionForm.answerText} onChange={(event) => setQuestionForm({ ...questionForm, answerText: event.target.value })} /></label>
+          </div>
+          <label className="block-label">题干<textarea value={questionForm.stem} onChange={(event) => setQuestionForm({ ...questionForm, stem: event.target.value })} /></label>
+          <label className="block-label">选项<textarea value={questionForm.optionsText} onChange={(event) => setQuestionForm({ ...questionForm, optionsText: event.target.value })} placeholder={'A. 选项一\nB. 选项二'} /></label>
+          <label className="block-label">解析<textarea value={questionForm.analysis} onChange={(event) => setQuestionForm({ ...questionForm, analysis: event.target.value })} /></label>
+          <div className="button-row">
+            <button className="primary-btn" onClick={saveQuestion}>保存题目</button>
+            <button className="ghost-btn" onClick={() => setQuestionForm(null)}>取消</button>
+          </div>
+        </div>
+      )}
+    </Panel>
   );
 }
 
@@ -1227,6 +1451,55 @@ function editBank(bank, store, refresh) {
   refresh();
 }
 
+function emptyQuestionForm(bank) {
+  return {
+    id: '',
+    chapterId: bank.chapters[0]?.id || '',
+    type: 'single',
+    stem: '',
+    optionsText: 'A. \nB. \nC. \nD. ',
+    answerText: '',
+    analysis: ''
+  };
+}
+
+function questionToForm(question) {
+  return {
+    id: question.id,
+    questionId: question.id,
+    bankId: question.bankId,
+    chapterId: question.chapterId,
+    type: question.type,
+    stem: question.stem,
+    optionsText: (question.options || []).map((option) => `${option.key}. ${option.text}`).join('\n'),
+    answerText: question.answerText || (question.answer || []).join('、'),
+    answer: question.answer || [],
+    analysis: question.analysis || ''
+  };
+}
+
+function parseOptionText(text) {
+  return String(text || '')
+    .split(/\r?\n/)
+    .map((line, index) => {
+      const match = line.trim().match(/^([A-Ha-h])[\.\、\)]\s*(.*)$/);
+      return match
+        ? { key: match[1].toUpperCase(), text: match[2].trim() }
+        : { key: String.fromCharCode(65 + index), text: line.trim() };
+    })
+    .filter((option) => option.text);
+}
+
+function adminRoleLabel(role) {
+  const labels = {
+    super_admin: '超级管理员',
+    content_admin: '题库管理员',
+    support: '客服/运营',
+    operator: '普通管理员'
+  };
+  return labels[role] || role || '管理员';
+}
+
 function modeTitle(mode) {
   return practiceModes.find((item) => item.key === mode)?.title || '练习';
 }
@@ -1254,9 +1527,20 @@ function formatDateTime(timestamp) {
 function actionLabel(action) {
   const labels = {
     'admin.login': '管理员登录',
+    'admin.create': '新增管理员',
+    'admin.update': '更新管理员',
+    'admin.delete': '删除管理员',
     'user.delete': '删除用户',
     'user.grant': '手动授权',
     'bank.import': '导入题库',
+    'bank.update': '更新题库',
+    'bank.delete': '删除题库',
+    'chapter.create': '新增章节',
+    'chapter.update': '更新章节',
+    'chapter.delete': '删除章节',
+    'question.create': '新增题目',
+    'question.update': '更新题目',
+    'question.delete': '删除题目',
     'activation_codes.create': '生成激活码'
   };
   return labels[action] || action || '操作';

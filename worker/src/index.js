@@ -15,6 +15,10 @@ export default {
       if (route === 'POST /api/auth/register') return register(request, env);
       if (route === 'POST /api/auth/login') return login(request, env);
       if (route === 'POST /api/admin/login') return adminLogin(request, env);
+      if (route === 'GET /api/admin/accounts') return listAdminAccounts(request, env);
+      if (route === 'POST /api/admin/accounts') return createAdminAccount(request, env);
+      if (route === 'PUT /api/admin/accounts') return updateAdminAccount(request, env);
+      if (route === 'DELETE /api/admin/accounts') return deleteAdminAccount(request, env);
       if (route === 'GET /api/admin/users') return listAdminUsers(request, env);
       if (route === 'GET /api/admin/user-detail') return getAdminUserDetail(request, env);
       if (route === 'DELETE /api/admin/users') return deleteAdminUser(request, env);
@@ -25,6 +29,14 @@ export default {
       if (route === 'POST /api/answers') return submitAnswer(request, env);
       if (route === 'POST /api/favorites/toggle') return toggleFavorite(request, env);
       if (route === 'POST /api/admin/import-bank') return importBank(request, env);
+      if (route === 'PUT /api/admin/banks') return updateAdminBank(request, env);
+      if (route === 'DELETE /api/admin/banks') return deleteAdminBank(request, env);
+      if (route === 'POST /api/admin/chapters') return createAdminChapter(request, env);
+      if (route === 'PUT /api/admin/chapters') return updateAdminChapter(request, env);
+      if (route === 'DELETE /api/admin/chapters') return deleteAdminChapter(request, env);
+      if (route === 'POST /api/admin/questions') return createAdminQuestion(request, env);
+      if (route === 'PUT /api/admin/questions') return updateAdminQuestion(request, env);
+      if (route === 'DELETE /api/admin/questions') return deleteAdminQuestion(request, env);
       if (route === 'POST /api/admin/activation-codes') return createActivationCodes(request, env);
 
       return fail('接口不存在', 404, env, { requestId });
@@ -81,11 +93,17 @@ async function login(request, env) {
 
 async function adminLogin(request, env) {
   const body = await readJson(request);
+  const phone = String(body.phone || body.username || 'admin').trim();
   const password = String(body.password || '');
-  const expected = env.ADMIN_PASSWORD || 'admin123';
-  if (password !== expected) return fail('\u7ba1\u7406\u5458\u5bc6\u7801\u9519\u8bef', 401, env);
-  const admin = await env.DB.prepare('SELECT * FROM users WHERE role = ? LIMIT 1').bind('admin').first();
-  const user = admin || { id: 'admin-default', role: 'admin', name: '\u7ba1\u7406\u5458', phone: 'admin' };
+  const admin = await env.DB.prepare('SELECT * FROM users WHERE role = ? AND phone = ? LIMIT 1').bind('admin', phone).first();
+  let user = admin;
+  if (!user && phone === 'admin') {
+    user = { id: 'admin-default', role: 'admin', name: '\u7ba1\u7406\u5458', phone: 'admin', admin_role: 'super_admin', admin_enabled: 1 };
+  }
+  if (!user || Number(user.admin_enabled ?? 1) !== 1) return fail('管理员账号不存在或已停用', 401, env);
+  const expected = user.password_hash ? user.password_hash : await hashPassword(env.ADMIN_PASSWORD || 'admin123');
+  if (expected !== await hashPassword(password)) return fail('\u7ba1\u7406\u5458\u5bc6\u7801\u9519\u8bef', 401, env);
+  await env.DB.prepare('UPDATE users SET last_login_at = ?, updated_at = ? WHERE id = ?').bind(now(), now(), user.id).run().catch(() => {});
   await recordAdminLog(request, env, {
     adminId: user.id,
     action: 'admin.login',
@@ -94,6 +112,75 @@ async function adminLogin(request, env) {
     detail: { phone: user.phone }
   });
   return ok({ user: publicUser(user), token: 'admin-demo-token' }, env);
+}
+
+async function listAdminAccounts(request, env) {
+  requireAdmin(request);
+  const rows = await env.DB.prepare(`
+    SELECT id, role, name, phone, admin_role, admin_enabled, last_login_at, created_at, updated_at
+    FROM users
+    WHERE role = 'admin'
+    ORDER BY created_at DESC
+  `).all();
+  return ok({ admins: rows.results || [] }, env);
+}
+
+async function createAdminAccount(request, env) {
+  requireAdmin(request);
+  const body = await readJson(request);
+  const name = String(body.name || '').trim();
+  const phone = String(body.phone || '').trim();
+  const password = String(body.password || '');
+  const adminRole = String(body.adminRole || body.admin_role || 'operator').trim();
+  if (!name || !phone || !password) return fail('请输入管理员姓名、账号和密码', 400, env);
+  if (password.length < 6) return fail('密码至少需要 6 位', 400, env);
+  const existing = await env.DB.prepare('SELECT id FROM users WHERE phone = ?').bind(phone).first();
+  if (existing) return fail('该账号已存在', 409, env);
+  const timestamp = now();
+  const admin = { id: id('admin'), role: 'admin', name, phone, admin_role: adminRole, admin_enabled: 1, created_at: timestamp, updated_at: timestamp };
+  await env.DB.prepare(`
+    INSERT INTO users (id, role, name, phone, password_hash, admin_role, admin_enabled, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).bind(admin.id, admin.role, admin.name, admin.phone, await hashPassword(password), admin.admin_role, 1, timestamp, timestamp).run();
+  await recordAdminLog(request, env, { action: 'admin.create', targetType: 'admin', targetId: admin.id, detail: { name, phone, adminRole } });
+  return ok({ admin }, env);
+}
+
+async function updateAdminAccount(request, env) {
+  requireAdmin(request);
+  const body = await readJson(request);
+  const adminId = String(body.id || '').trim();
+  const patch = body.patch || body;
+  if (!adminId) return fail('缺少管理员 ID', 400, env);
+  const admin = await env.DB.prepare('SELECT * FROM users WHERE id = ? AND role = ?').bind(adminId, 'admin').first();
+  if (!admin) return fail('管理员不存在', 404, env);
+  const nextName = String(patch.name ?? admin.name).trim();
+  const nextRole = String(patch.adminRole ?? patch.admin_role ?? admin.admin_role ?? 'operator').trim();
+  const nextEnabled = patch.adminEnabled ?? patch.admin_enabled ?? admin.admin_enabled ?? 1;
+  const statements = [
+    env.DB.prepare('UPDATE users SET name = ?, admin_role = ?, admin_enabled = ?, updated_at = ? WHERE id = ?')
+      .bind(nextName, nextRole, Number(nextEnabled) ? 1 : 0, now(), adminId)
+  ];
+  if (patch.password) {
+    if (String(patch.password).length < 6) return fail('密码至少需要 6 位', 400, env);
+    statements.push(env.DB.prepare('UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?').bind(await hashPassword(patch.password), now(), adminId));
+  }
+  await env.DB.batch(statements);
+  await recordAdminLog(request, env, { action: 'admin.update', targetType: 'admin', targetId: adminId, detail: { name: nextName, adminRole: nextRole, adminEnabled: Number(nextEnabled) ? 1 : 0 } });
+  return ok({ ok: true }, env);
+}
+
+async function deleteAdminAccount(request, env) {
+  requireAdmin(request);
+  const body = await readJson(request);
+  const adminId = String(body.id || '').trim();
+  if (!adminId) return fail('缺少管理员 ID', 400, env);
+  const admin = await env.DB.prepare('SELECT * FROM users WHERE id = ? AND role = ?').bind(adminId, 'admin').first();
+  if (!admin) return fail('管理员不存在', 404, env);
+  if (admin.phone === 'admin') return fail('默认管理员不能删除，只能停用其他管理员', 403, env);
+  await env.DB.prepare('DELETE FROM users WHERE id = ? AND role = ?').bind(adminId, 'admin').run();
+  await recordAdminLog(request, env, { action: 'admin.delete', targetType: 'admin', targetId: adminId, detail: { name: admin.name, phone: admin.phone } });
+  return ok({ ok: true }, env);
 }
 
 async function listAdminUsers(request, env) {
@@ -393,6 +480,178 @@ async function importBank(request, env) {
   return ok({ ok: true, bankId, count: questions.length }, env);
 }
 
+async function updateAdminBank(request, env) {
+  requireAdmin(request);
+  const body = await readJson(request);
+  const bankId = String(body.id || body.bankId || '').trim();
+  if (!bankId) return fail('缺少题库 ID', 400, env);
+  const bank = await env.DB.prepare('SELECT * FROM banks WHERE id = ?').bind(bankId).first();
+  if (!bank) return fail('题库不存在', 404, env);
+  const name = String(body.name ?? bank.name).trim() || bank.name;
+  const description = String(body.description ?? bank.description ?? '').trim();
+  const status = ['published', 'hidden'].includes(body.status) ? body.status : bank.status;
+  const accessType = ['free', 'paid'].includes(body.accessType || body.access_type) ? (body.accessType || body.access_type) : bank.access_type;
+  const price = Number(body.price ?? bank.price) || 0;
+  await env.DB.prepare(`
+    UPDATE banks SET name = ?, description = ?, status = ?, access_type = ?, price = ?, updated_at = ? WHERE id = ?
+  `).bind(name, description, status, accessType, price, now(), bankId).run();
+  await recordAdminLog(request, env, { action: 'bank.update', targetType: 'bank', targetId: bankId, detail: { name, status, accessType, price } });
+  return ok({ ok: true }, env);
+}
+
+async function deleteAdminBank(request, env) {
+  requireAdmin(request);
+  const body = await readJson(request);
+  const bankId = String(body.id || body.bankId || '').trim();
+  if (!bankId) return fail('缺少题库 ID', 400, env);
+  const bank = await env.DB.prepare('SELECT * FROM banks WHERE id = ?').bind(bankId).first();
+  if (!bank) return fail('题库不存在', 404, env);
+  await env.DB.batch([
+    env.DB.prepare('DELETE FROM attempts WHERE bank_id = ?').bind(bankId),
+    env.DB.prepare('DELETE FROM wrong_questions WHERE bank_id = ?').bind(bankId),
+    env.DB.prepare('DELETE FROM favorites WHERE bank_id = ?').bind(bankId),
+    env.DB.prepare('DELETE FROM user_banks WHERE bank_id = ?').bind(bankId),
+    env.DB.prepare('DELETE FROM entitlements WHERE bank_id = ?').bind(bankId),
+    env.DB.prepare('DELETE FROM questions WHERE bank_id = ?').bind(bankId),
+    env.DB.prepare('DELETE FROM chapters WHERE bank_id = ?').bind(bankId),
+    env.DB.prepare('DELETE FROM exam_templates WHERE bank_id = ?').bind(bankId),
+    env.DB.prepare('DELETE FROM banks WHERE id = ?').bind(bankId)
+  ]);
+  await recordAdminLog(request, env, { action: 'bank.delete', targetType: 'bank', targetId: bankId, detail: { name: bank.name } });
+  return ok({ ok: true }, env);
+}
+
+async function createAdminChapter(request, env) {
+  requireAdmin(request);
+  const body = await readJson(request);
+  const bankId = String(body.bankId || body.bank_id || '').trim();
+  const name = String(body.name || '').trim();
+  if (!bankId || !name) return fail('缺少题库 ID 或章节名称', 400, env);
+  const bank = await env.DB.prepare('SELECT id FROM banks WHERE id = ?').bind(bankId).first();
+  if (!bank) return fail('题库不存在', 404, env);
+  const latest = await env.DB.prepare('SELECT MAX(sort_order) AS max_sort FROM chapters WHERE bank_id = ?').bind(bankId).first();
+  const chapter = { id: id('ch'), bankId, name, sortOrder: Number(latest?.max_sort || 0) + 1, createdAt: now() };
+  await env.DB.prepare('INSERT INTO chapters (id, bank_id, name, sort_order, created_at) VALUES (?, ?, ?, ?, ?)')
+    .bind(chapter.id, chapter.bankId, chapter.name, chapter.sortOrder, chapter.createdAt)
+    .run();
+  await recordAdminLog(request, env, { action: 'chapter.create', targetType: 'chapter', targetId: chapter.id, detail: { bankId, name } });
+  return ok({ chapter }, env);
+}
+
+async function updateAdminChapter(request, env) {
+  requireAdmin(request);
+  const body = await readJson(request);
+  const chapterId = String(body.id || body.chapterId || '').trim();
+  if (!chapterId) return fail('缺少章节 ID', 400, env);
+  const chapter = await env.DB.prepare('SELECT * FROM chapters WHERE id = ?').bind(chapterId).first();
+  if (!chapter) return fail('章节不存在', 404, env);
+  const name = String(body.name ?? chapter.name).trim() || chapter.name;
+  const sortOrder = Number(body.sortOrder ?? body.sort_order ?? chapter.sort_order) || chapter.sort_order;
+  await env.DB.prepare('UPDATE chapters SET name = ?, sort_order = ? WHERE id = ?').bind(name, sortOrder, chapterId).run();
+  await recordAdminLog(request, env, { action: 'chapter.update', targetType: 'chapter', targetId: chapterId, detail: { bankId: chapter.bank_id, name, sortOrder } });
+  return ok({ ok: true }, env);
+}
+
+async function deleteAdminChapter(request, env) {
+  requireAdmin(request);
+  const body = await readJson(request);
+  const chapterId = String(body.id || body.chapterId || '').trim();
+  if (!chapterId) return fail('缺少章节 ID', 400, env);
+  const chapter = await env.DB.prepare('SELECT * FROM chapters WHERE id = ?').bind(chapterId).first();
+  if (!chapter) return fail('章节不存在', 404, env);
+  await env.DB.batch([
+    env.DB.prepare('DELETE FROM attempts WHERE question_id IN (SELECT id FROM questions WHERE chapter_id = ?)').bind(chapterId),
+    env.DB.prepare('DELETE FROM wrong_questions WHERE chapter_id = ?').bind(chapterId),
+    env.DB.prepare('DELETE FROM favorites WHERE question_id IN (SELECT id FROM questions WHERE chapter_id = ?)').bind(chapterId),
+    env.DB.prepare('DELETE FROM questions WHERE chapter_id = ?').bind(chapterId),
+    env.DB.prepare('DELETE FROM chapters WHERE id = ?').bind(chapterId)
+  ]);
+  await recordAdminLog(request, env, { action: 'chapter.delete', targetType: 'chapter', targetId: chapterId, detail: { bankId: chapter.bank_id, name: chapter.name } });
+  return ok({ ok: true }, env);
+}
+
+async function createAdminQuestion(request, env) {
+  requireAdmin(request);
+  const body = await readJson(request);
+  const bankId = String(body.bankId || body.bank_id || '').trim();
+  const chapterId = String(body.chapterId || body.chapter_id || '').trim();
+  const type = String(body.type || 'single').trim();
+  const stem = String(body.stem || '').trim();
+  if (!bankId || !chapterId || !stem) return fail('缺少题库、章节或题干', 400, env);
+  const chapter = await env.DB.prepare('SELECT id FROM chapters WHERE id = ? AND bank_id = ?').bind(chapterId, bankId).first();
+  if (!chapter) return fail('章节不存在或不属于该题库', 404, env);
+  const answer = normalizeAnswer(body.answer || body.answerText || []);
+  if (!answer.length) return fail('请填写答案', 400, env);
+  const latest = await env.DB.prepare('SELECT MAX(sort_order) AS max_sort FROM questions WHERE bank_id = ?').bind(bankId).first();
+  const questionId = id('q');
+  await env.DB.prepare(`
+    INSERT INTO questions (id, bank_id, chapter_id, type, stem, options_json, answer_json, answer_text, analysis, sort_order, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).bind(
+    questionId,
+    bankId,
+    chapterId,
+    type,
+    stem,
+    JSON.stringify(normalizeOptionsPayload(body.options || [])),
+    JSON.stringify(answer),
+    body.answerText || answer.join('、'),
+    String(body.analysis || '').trim(),
+    Number(latest?.max_sort || 0) + 1,
+    now()
+  ).run();
+  await recordAdminLog(request, env, { action: 'question.create', targetType: 'question', targetId: questionId, detail: { bankId, chapterId, type } });
+  return ok({ questionId }, env);
+}
+
+async function updateAdminQuestion(request, env) {
+  requireAdmin(request);
+  const body = await readJson(request);
+  const questionId = String(body.id || body.questionId || '').trim();
+  if (!questionId) return fail('缺少题目 ID', 400, env);
+  const question = await env.DB.prepare('SELECT * FROM questions WHERE id = ?').bind(questionId).first();
+  if (!question) return fail('题目不存在', 404, env);
+  const nextChapterId = String(body.chapterId || body.chapter_id || question.chapter_id).trim();
+  const chapter = await env.DB.prepare('SELECT id FROM chapters WHERE id = ? AND bank_id = ?').bind(nextChapterId, question.bank_id).first();
+  if (!chapter) return fail('章节不存在或不属于该题库', 404, env);
+  const type = String(body.type ?? question.type).trim();
+  const stem = String(body.stem ?? question.stem).trim();
+  const answer = normalizeAnswer(body.answer ?? parseJson(question.answer_json, []));
+  if (!stem || !answer.length) return fail('题干和答案不能为空', 400, env);
+  await env.DB.prepare(`
+    UPDATE questions SET chapter_id = ?, type = ?, stem = ?, options_json = ?, answer_json = ?, answer_text = ?, analysis = ?, sort_order = ? WHERE id = ?
+  `).bind(
+    nextChapterId,
+    type,
+    stem,
+    JSON.stringify(normalizeOptionsPayload(body.options ?? parseJson(question.options_json, []))),
+    JSON.stringify(answer),
+    body.answerText || answer.join('、'),
+    String(body.analysis ?? question.analysis ?? '').trim(),
+    Number(body.sortOrder ?? body.sort_order ?? question.sort_order) || question.sort_order,
+    questionId
+  ).run();
+  await recordAdminLog(request, env, { action: 'question.update', targetType: 'question', targetId: questionId, detail: { bankId: question.bank_id, chapterId: nextChapterId, type } });
+  return ok({ ok: true }, env);
+}
+
+async function deleteAdminQuestion(request, env) {
+  requireAdmin(request);
+  const body = await readJson(request);
+  const questionId = String(body.id || body.questionId || '').trim();
+  if (!questionId) return fail('缺少题目 ID', 400, env);
+  const question = await env.DB.prepare('SELECT * FROM questions WHERE id = ?').bind(questionId).first();
+  if (!question) return fail('题目不存在', 404, env);
+  await env.DB.batch([
+    env.DB.prepare('DELETE FROM attempts WHERE question_id = ?').bind(questionId),
+    env.DB.prepare('DELETE FROM wrong_questions WHERE question_id = ?').bind(questionId),
+    env.DB.prepare('DELETE FROM favorites WHERE question_id = ?').bind(questionId),
+    env.DB.prepare('DELETE FROM questions WHERE id = ?').bind(questionId)
+  ]);
+  await recordAdminLog(request, env, { action: 'question.delete', targetType: 'question', targetId: questionId, detail: { bankId: question.bank_id, stem: question.stem } });
+  return ok({ ok: true }, env);
+}
+
 async function createActivationCodes(request, env) {
   requireAdmin(request);
   const body = await readJson(request);
@@ -444,7 +703,7 @@ function fail(message, status, env, extra = {}) {
 function withCors(response, env) {
   const headers = new Headers(response.headers);
   headers.set('access-control-allow-origin', env.CORS_ORIGIN || '*');
-  headers.set('access-control-allow-methods', 'GET,POST,DELETE,OPTIONS');
+  headers.set('access-control-allow-methods', 'GET,POST,PUT,DELETE,OPTIONS');
   headers.set('access-control-allow-headers', 'content-type,authorization,x-user-id,x-admin-token');
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 }
@@ -467,6 +726,20 @@ function requireAdmin(request) {
 function normalizeAnswer(answer) {
   const list = Array.isArray(answer) ? answer : [answer];
   return list.map((item) => String(item || '').trim().toUpperCase()).filter(Boolean).sort();
+}
+
+function normalizeOptionsPayload(options) {
+  return (Array.isArray(options) ? options : [])
+    .map((option, index) => {
+      if (typeof option === 'string') {
+        return { key: String.fromCharCode(65 + index), text: option.replace(/^[A-H][\.\、\)]\s*/i, '').trim() };
+      }
+      return {
+        key: String(option.key || String.fromCharCode(65 + index)).trim().toUpperCase(),
+        text: String(option.text || '').trim()
+      };
+    })
+    .filter((option) => option.text);
 }
 
 function groupBy(list, field) {

@@ -40,7 +40,11 @@ export function createApiClient(options = {}) {
     health: () => request('/api/health', { method: 'GET' }),
     registerUser: (name, phone, password) => request('/api/auth/register', { method: 'POST', body: JSON.stringify({ name, phone, password }) }),
     loginUser: (name, phone, password) => request('/api/auth/login', { method: 'POST', body: JSON.stringify({ name, phone, password }) }),
-    loginAdmin: (password) => request('/api/admin/login', { method: 'POST', body: JSON.stringify({ password }) }),
+    loginAdmin: (phone, password) => request('/api/admin/login', { method: 'POST', body: JSON.stringify({ phone, password }) }),
+    listAdminAccounts: () => request('/api/admin/accounts', { method: 'GET' }),
+    createAdminAccount: (payload) => request('/api/admin/accounts', { method: 'POST', body: JSON.stringify(payload) }),
+    updateAdminAccount: (id, patch) => request('/api/admin/accounts', { method: 'PUT', body: JSON.stringify({ id, patch }) }),
+    deleteAdminAccount: (id) => request('/api/admin/accounts', { method: 'DELETE', body: JSON.stringify({ id }) }),
     listAdminUsers: () => request('/api/admin/users', { method: 'GET' }),
     getAdminUserDetail: (userId) => request(`/api/admin/user-detail?userId=${encodeURIComponent(userId)}`, { method: 'GET' }),
     deleteAdminUser: (userId) => request('/api/admin/users', { method: 'DELETE', body: JSON.stringify({ userId }) }),
@@ -51,6 +55,14 @@ export function createApiClient(options = {}) {
     submitAnswer: (questionId, answer, source = 'practice') => request('/api/answers', { method: 'POST', body: JSON.stringify({ questionId, answer, source }) }),
     toggleFavorite: (questionId) => request('/api/favorites/toggle', { method: 'POST', body: JSON.stringify({ questionId }) }),
     importBank: (payload) => request('/api/admin/import-bank', { method: 'POST', body: JSON.stringify(payload) }),
+    updateBank: (payload) => request('/api/admin/banks', { method: 'PUT', body: JSON.stringify(payload) }),
+    deleteBank: (bankId) => request('/api/admin/banks', { method: 'DELETE', body: JSON.stringify({ bankId }) }),
+    createChapter: (payload) => request('/api/admin/chapters', { method: 'POST', body: JSON.stringify(payload) }),
+    updateChapter: (payload) => request('/api/admin/chapters', { method: 'PUT', body: JSON.stringify(payload) }),
+    deleteChapter: (chapterId) => request('/api/admin/chapters', { method: 'DELETE', body: JSON.stringify({ chapterId }) }),
+    createQuestion: (payload) => request('/api/admin/questions', { method: 'POST', body: JSON.stringify(payload) }),
+    updateQuestion: (payload) => request('/api/admin/questions', { method: 'PUT', body: JSON.stringify(payload) }),
+    deleteQuestion: (questionId) => request('/api/admin/questions', { method: 'DELETE', body: JSON.stringify({ questionId }) }),
     createActivationCodes: (planId, count) => request('/api/admin/activation-codes', { method: 'POST', body: JSON.stringify({ planId, count }) })
   };
 }

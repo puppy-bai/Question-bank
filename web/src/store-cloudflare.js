@@ -13,6 +13,7 @@ export function createCloudflareStore() {
     wrongQuestions: {},
     selectedUserDetail: null,
     adminLogs: [],
+    adminAccounts: [],
     plans: [
       { id: 'plan-month', name: '月会员', type: 'membership', durationDays: 30, price: 29, enabled: true },
       { id: 'plan-year', name: '年会员', type: 'membership', durationDays: 365, price: 99, enabled: true },
@@ -82,14 +83,33 @@ export function createCloudflareStore() {
       await refreshBanks();
       return result.user;
     },
-    async loginAdmin(password) {
-      const result = await api.loginAdmin(password);
+    async loginAdmin(phone, password) {
+      const result = await api.loginAdmin(phone, password);
       state.currentUser = result.user;
       api.setSession(result.user.id, result.token);
       await refreshBanks();
       const users = await api.listAdminUsers();
       state.users = users.users || [];
+      const admins = await api.listAdminAccounts();
+      state.adminAccounts = admins.admins || [];
       return true;
+    },
+    async refreshAdminAccounts() {
+      const result = await api.listAdminAccounts();
+      state.adminAccounts = result.admins || [];
+      return state.adminAccounts;
+    },
+    async createAdminAccount(payload) {
+      await api.createAdminAccount(payload);
+      return this.refreshAdminAccounts();
+    },
+    async updateAdminAccount(id, patch) {
+      await api.updateAdminAccount(id, patch);
+      return this.refreshAdminAccounts();
+    },
+    async deleteAdminAccount(id) {
+      await api.deleteAdminAccount(id);
+      return this.refreshAdminAccounts();
     },
     async refreshAdminUsers() {
       const users = await api.listAdminUsers();
@@ -182,9 +202,56 @@ export function createCloudflareStore() {
       const correctCount = Object.values(results).filter((item) => item.correct).length;
       return { results, correctCount, wrongCount: questions.length - correctCount };
     },
-    renameBank() {},
-    updateBank() {},
-    deleteBank() {},
+    async renameBank(bankId, name) {
+      await api.updateBank({ id: bankId, name });
+      await refreshBanks();
+      return true;
+    },
+    async updateBank(bankId, patch) {
+      await api.updateBank({ id: bankId, ...patch });
+      await refreshBanks();
+      return true;
+    },
+    async deleteBank(bankId) {
+      await api.deleteBank(bankId);
+      delete state.questionsByBank[bankId];
+      await refreshBanks();
+      return true;
+    },
+    async createChapter(payload) {
+      const result = await api.createChapter(payload);
+      await refreshBanks();
+      return result.chapter;
+    },
+    async updateChapter(payload) {
+      await api.updateChapter(payload);
+      await refreshBanks();
+      return true;
+    },
+    async deleteChapter(chapterId, bankId) {
+      await api.deleteChapter(chapterId);
+      if (bankId) delete state.questionsByBank[bankId];
+      await refreshBanks();
+      return true;
+    },
+    async createQuestion(payload) {
+      await api.createQuestion(payload);
+      delete state.questionsByBank[payload.bankId];
+      await refreshBanks();
+      return true;
+    },
+    async updateQuestion(payload) {
+      await api.updateQuestion(payload);
+      delete state.questionsByBank[payload.bankId];
+      await refreshBanks();
+      return true;
+    },
+    async deleteQuestion(questionId, bankId) {
+      await api.deleteQuestion(questionId);
+      if (bankId) delete state.questionsByBank[bankId];
+      await refreshBanks();
+      return true;
+    },
     redeemActivationCode() {
       return { ok: false, message: '云端激活码兑换下一步接入' };
     },

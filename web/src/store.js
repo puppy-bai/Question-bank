@@ -170,7 +170,15 @@ export function createStore() {
             created_at: item.created_at || item.createdAt,
             updated_at: item.updated_at || item.updatedAt
           };
-        })
+        }),
+        adminAccounts: state.users.filter((item) => item.role === 'admin').map((item) => ({
+          ...item,
+          admin_role: item.admin_role || item.adminRole || 'super_admin',
+          admin_enabled: item.admin_enabled ?? item.adminEnabled ?? 1,
+          created_at: item.created_at || item.createdAt,
+          updated_at: item.updated_at || item.updatedAt,
+          last_login_at: item.last_login_at || item.lastLoginAt
+        }))
       };
     },
     registerUser(name, phone, password) {
@@ -201,14 +209,65 @@ export function createStore() {
       save();
       return user;
     },
-    loginAdmin(password) {
-      if (String(password || '') !== state.adminPassword) return false;
-      let admin = state.users.find((item) => item.role === 'admin');
+    loginAdmin(phoneOrPassword, maybePassword) {
+      const phone = maybePassword === undefined ? 'admin' : String(phoneOrPassword || 'admin').trim();
+      const password = maybePassword === undefined ? phoneOrPassword : maybePassword;
+      let admin = state.users.find((item) => item.role === 'admin' && item.phone === phone);
+      if (!admin && phone === 'admin') {
+        admin = state.users.find((item) => item.role === 'admin');
+      }
+      if (String(password || '') !== (admin?.password || state.adminPassword)) return false;
       if (!admin) {
-        admin = { id: id('admin'), role: 'admin', name: '管理员', phone: 'admin', createdAt: now() };
+        admin = { id: id('admin'), role: 'admin', name: '管理员', phone: 'admin', password: state.adminPassword, adminRole: 'super_admin', adminEnabled: 1, createdAt: now() };
         state.users.push(admin);
       }
+      if ((admin.adminEnabled ?? admin.admin_enabled ?? 1) === 0) return false;
+      admin.lastLoginAt = now();
       state.currentUserId = admin.id;
+      state.adminLogs.unshift(makeAdminLog('admin.login', 'admin', admin.id, { phone: admin.phone }));
+      save();
+      return true;
+    },
+    refreshAdminAccounts() {
+      return state.users.filter((item) => item.role === 'admin');
+    },
+    createAdminAccount(payload) {
+      const phone = String(payload.phone || '').trim();
+      if (!phone || !payload.name || !payload.password) throw new Error('请输入管理员姓名、账号和密码');
+      if (state.users.some((item) => item.phone === phone)) throw new Error('该账号已存在');
+      const admin = {
+        id: id('admin'),
+        role: 'admin',
+        name: String(payload.name).trim(),
+        phone,
+        password: String(payload.password),
+        adminRole: payload.adminRole || 'operator',
+        adminEnabled: 1,
+        createdAt: now(),
+        updatedAt: now()
+      };
+      state.users.push(admin);
+      state.adminLogs.unshift(makeAdminLog('admin.create', 'admin', admin.id, { name: admin.name, phone: admin.phone }));
+      save();
+      return admin;
+    },
+    updateAdminAccount(adminId, patch) {
+      const admin = state.users.find((item) => item.id === adminId && item.role === 'admin');
+      if (!admin) return false;
+      admin.name = String(patch.name ?? admin.name).trim();
+      admin.adminRole = patch.adminRole ?? patch.admin_role ?? admin.adminRole ?? 'operator';
+      admin.adminEnabled = patch.adminEnabled ?? patch.admin_enabled ?? admin.adminEnabled ?? 1;
+      if (patch.password) admin.password = String(patch.password);
+      admin.updatedAt = now();
+      state.adminLogs.unshift(makeAdminLog('admin.update', 'admin', admin.id, { name: admin.name, phone: admin.phone }));
+      save();
+      return true;
+    },
+    deleteAdminAccount(adminId) {
+      const admin = state.users.find((item) => item.id === adminId && item.role === 'admin');
+      if (!admin || admin.phone === 'admin') return false;
+      state.users = state.users.filter((item) => item.id !== adminId);
+      state.adminLogs.unshift(makeAdminLog('admin.delete', 'admin', adminId, { name: admin.name, phone: admin.phone }));
       save();
       return true;
     },
@@ -545,6 +604,7 @@ export function createStore() {
     updateBank(bankId, patch) {
       const bank = state.banks.find((item) => item.id === bankId);
       if (bank) Object.assign(bank, patch);
+      state.adminLogs.unshift(makeAdminLog('bank.update', 'bank', bankId, patch));
       save();
     },
     deleteBank(bankId) {
@@ -554,7 +614,98 @@ export function createStore() {
         state.userBanks[userId] = state.userBanks[userId].filter((idValue) => idValue !== bankId);
       });
       delete state.examTemplates[bankId];
+      state.adminLogs.unshift(makeAdminLog('bank.delete', 'bank', bankId, {}));
       save();
+    },
+    createChapter({ bankId, name }) {
+      const bank = state.banks.find((item) => item.id === bankId);
+      if (!bank) return null;
+      const chapter = { id: id('ch'), name: String(name || '').trim() || '新章节' };
+      bank.chapters.push(chapter);
+      state.adminLogs.unshift(makeAdminLog('chapter.create', 'chapter', chapter.id, { bankId, name: chapter.name }));
+      save();
+      return chapter;
+    },
+    updateChapter({ id: chapterId, chapterId: altChapterId, bankId, name }) {
+      const targetId = chapterId || altChapterId;
+      const bank = state.banks.find((item) => item.id === bankId || item.chapters.some((chapter) => chapter.id === targetId));
+      const chapter = bank?.chapters.find((item) => item.id === targetId);
+      if (!chapter) return false;
+      chapter.name = String(name || chapter.name).trim();
+      state.questions.forEach((question) => {
+        if (question.chapterId === targetId) question.chapterName = chapter.name;
+      });
+      state.adminLogs.unshift(makeAdminLog('chapter.update', 'chapter', targetId, { bankId: bank.id, name: chapter.name }));
+      save();
+      return true;
+    },
+    deleteChapter(chapterId) {
+      const bank = state.banks.find((item) => item.chapters.some((chapter) => chapter.id === chapterId));
+      if (!bank) return false;
+      bank.chapters = bank.chapters.filter((chapter) => chapter.id !== chapterId);
+      const questionIds = state.questions.filter((question) => question.chapterId === chapterId).map((question) => question.id);
+      state.questions = state.questions.filter((question) => question.chapterId !== chapterId);
+      state.attempts = state.attempts.filter((attempt) => !questionIds.includes(attempt.questionId));
+      Object.keys(state.wrongQuestions).forEach((userId) => {
+        questionIds.forEach((questionId) => delete state.wrongQuestions[userId][questionId]);
+      });
+      Object.keys(state.favorites).forEach((userId) => {
+        state.favorites[userId] = state.favorites[userId].filter((questionId) => !questionIds.includes(questionId));
+      });
+      state.adminLogs.unshift(makeAdminLog('chapter.delete', 'chapter', chapterId, { bankId: bank.id }));
+      save();
+      return true;
+    },
+    createQuestion(payload) {
+      const bank = state.banks.find((item) => item.id === payload.bankId);
+      const chapter = bank?.chapters.find((item) => item.id === payload.chapterId);
+      if (!bank || !chapter) return false;
+      const answer = normalizeAnswer(payload.answer || payload.answerText || [], payload.type);
+      state.questions.push({
+        id: id('q'),
+        bankId: bank.id,
+        chapterId: chapter.id,
+        chapterName: chapter.name,
+        type: payload.type || 'single',
+        stem: String(payload.stem || '').trim(),
+        options: normalizeOptions(payload.options || []),
+        answer,
+        answerText: payload.answerText || answer.join('、'),
+        analysis: payload.analysis || ''
+      });
+      state.adminLogs.unshift(makeAdminLog('question.create', 'question', bank.id, { bankId: bank.id, chapterId: chapter.id }));
+      save();
+      return true;
+    },
+    updateQuestion(payload) {
+      const question = state.questions.find((item) => item.id === (payload.id || payload.questionId));
+      if (!question) return false;
+      const bank = state.banks.find((item) => item.id === question.bankId);
+      const chapter = bank?.chapters.find((item) => item.id === (payload.chapterId || question.chapterId));
+      question.chapterId = chapter?.id || question.chapterId;
+      question.chapterName = chapter?.name || question.chapterName;
+      question.type = payload.type || question.type;
+      question.stem = String(payload.stem ?? question.stem).trim();
+      question.options = normalizeOptions(payload.options ?? question.options);
+      question.answer = normalizeAnswer(payload.answer ?? question.answer, question.type);
+      question.answerText = payload.answerText || question.answer.join('、');
+      question.analysis = String(payload.analysis ?? question.analysis ?? '');
+      state.adminLogs.unshift(makeAdminLog('question.update', 'question', question.id, { bankId: question.bankId }));
+      save();
+      return true;
+    },
+    deleteQuestion(questionId) {
+      const question = state.questions.find((item) => item.id === questionId);
+      if (!question) return false;
+      state.questions = state.questions.filter((item) => item.id !== questionId);
+      state.attempts = state.attempts.filter((attempt) => attempt.questionId !== questionId);
+      Object.keys(state.wrongQuestions).forEach((userId) => delete state.wrongQuestions[userId][questionId]);
+      Object.keys(state.favorites).forEach((userId) => {
+        state.favorites[userId] = state.favorites[userId].filter((idValue) => idValue !== questionId);
+      });
+      state.adminLogs.unshift(makeAdminLog('question.delete', 'question', questionId, { bankId: question.bankId }));
+      save();
+      return true;
     },
     importBank({ name, description, chapters, questions, accessType = 'free', price = 0, status = 'published' }) {
       const validQuestions = (questions || []).filter((item) => item.stem && item.answer?.length);
