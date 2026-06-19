@@ -4,8 +4,8 @@
   "private": true,
   "description": "微信题库小程序开发辅助脚本",
   "scripts": {
-    "build": "npm --prefix web run build",
-    "build:web": "npm --prefix web run build",
+    "build": "npm --prefix web install && npm --prefix web run build",
+    "build:web": "npm --prefix web install && npm --prefix web run build",
     "test:parser": "node scripts/test-parser.js"
   },
   "dependencies": {
