@@ -17,6 +17,7 @@ import {
   Library,
   Lock,
   LogOut,
+  ListChecks,
   Plus,
   RotateCcw,
   Settings,
@@ -256,6 +257,7 @@ function App() {
           { key: 'users', label: '用户管理', icon: Users },
           { key: 'orders', label: '订单', icon: CreditCard },
           { key: 'backup', label: '备份', icon: Download },
+          { key: 'logs', label: '日志', icon: ListChecks },
           { key: 'stats', label: '数据', icon: BarChart3 }
         ]}
         activeTab={adminTab}
@@ -269,6 +271,7 @@ function App() {
         {adminTab === 'users' && <AdminUsers snapshot={snapshot} store={store} refresh={refresh} />}
         {adminTab === 'orders' && <AdminOrders snapshot={snapshot} store={store} refresh={refresh} />}
         {adminTab === 'backup' && <AdminBackup store={store} refresh={refresh} />}
+        {adminTab === 'logs' && <AdminLogs snapshot={snapshot} store={store} refresh={refresh} />}
         {adminTab === 'stats' && <AdminStats snapshot={snapshot} />}
       </Shell>
     );
@@ -847,7 +850,23 @@ function AdminUsers({ snapshot, store, refresh }) {
   const normalUsers = snapshot.users.filter((item) => item.role === 'user');
   const [userId, setUserId] = useState(normalUsers[0]?.id || '');
   const [planId, setPlanId] = useState(snapshot.plans[0]?.id || '');
+  const [detailLoading, setDetailLoading] = useState(false);
   const selectedUser = normalUsers.find((user) => user.id === userId);
+  const selectedDetail = snapshot.selectedUserDetail;
+
+  async function openUserDetail(user) {
+    setUserId(user.id);
+    if (!store.getAdminUserDetail) return;
+    setDetailLoading(true);
+    try {
+      await store.getAdminUserDetail(user.id);
+      refresh();
+    } catch (error) {
+      alert(error.message || '加载用户详情失败');
+    } finally {
+      setDetailLoading(false);
+    }
+  }
 
   async function deleteUser(user) {
     const label = `${user.name || '未命名用户'} / ${user.phone || '无手机号'}`;
@@ -890,11 +909,16 @@ function AdminUsers({ snapshot, store, refresh }) {
                 <span>注册时间：{formatDate(user.created_at || user.createdAt) || '未知'}</span>
                 <span>最近答题：{formatDate(user.last_attempt_at || user.lastAttemptAt) || '暂无'}</span>
               </div>
-              <button className="danger-btn small" onClick={() => deleteUser(user)}><Trash2 size={16} />删除</button>
+              <div className="user-actions">
+                <button className="ghost-btn small" onClick={() => openUserDetail(user)}>详情</button>
+                <button className="danger-btn small" onClick={() => deleteUser(user)}><Trash2 size={16} />删除</button>
+              </div>
             </article>
           ))}
         </div>
       </Panel>
+      {detailLoading && <Panel><p className="muted">正在加载用户学习详情...</p></Panel>}
+      {selectedDetail?.user && <AdminUserDetail detail={selectedDetail} />}
       <Panel title="手动授权">
         <div className="config-grid">
           <label>用户<select value={userId} onChange={(event) => setUserId(event.target.value)}>{normalUsers.map((user) => <option key={user.id} value={user.id}>{user.name} / {user.phone}</option>)}</select></label>
@@ -906,6 +930,132 @@ function AdminUsers({ snapshot, store, refresh }) {
       <Panel title="授权记录">
         <div className="table-list">
           {snapshot.entitlementsView.slice().reverse().map((item) => <div key={item.id}><span>{item.userName}</span><span>{item.planName}</span><strong>{formatDate(item.expiresAt) || '永久'}</strong></div>)}
+        </div>
+      </Panel>
+    </div>
+  );
+}
+
+function AdminUserDetail({ detail }) {
+  const totalAttempts = detail.joinedBanks.reduce((sum, bank) => sum + Number(bank.attempt_count || 0), 0);
+  const totalCorrect = detail.joinedBanks.reduce((sum, bank) => sum + Number(bank.correct_count || 0), 0);
+  const accuracy = totalAttempts ? `${Math.round((totalCorrect / totalAttempts) * 100)}%` : '0%';
+  return (
+    <Panel title={`用户详情：${detail.user.name} / ${detail.user.phone}`}>
+      <div className="stats-grid compact">
+        <Metric value={detail.joinedBanks.length} label="加入题库" />
+        <Metric value={totalAttempts} label="累计答题" />
+        <Metric value={accuracy} label="综合正确率" />
+        <Metric value={detail.wrongQuestions.length} label="当前错题" danger />
+      </div>
+
+      <div className="detail-grid">
+        <section>
+          <h4>题库学习情况</h4>
+          <div className="table-list detail-table">
+            {detail.joinedBanks.map((bank) => {
+              const attempts = Number(bank.attempt_count || 0);
+              const correct = Number(bank.correct_count || 0);
+              return (
+                <div key={bank.id}>
+                  <span>{bank.name}</span>
+                  <span>答题 {attempts} / 题量 {bank.question_count || 0}</span>
+                  <strong>{attempts ? `${Math.round((correct / attempts) * 100)}%` : '0%'}</strong>
+                </div>
+              );
+            })}
+            {!detail.joinedBanks.length && <p className="muted">该用户还没有加入题库。</p>}
+          </div>
+        </section>
+
+        <section>
+          <h4>章节正确率</h4>
+          <div className="table-list detail-table">
+            {detail.chapterStats.slice(0, 8).map((chapter) => {
+              const attempts = Number(chapter.attempt_count || 0);
+              const correct = Number(chapter.correct_count || 0);
+              return (
+                <div key={`${chapter.bank_id}-${chapter.chapter_id}`}>
+                  <span>{chapter.chapter_name}</span>
+                  <span>{chapter.bank_name}</span>
+                  <strong>{attempts ? `${Math.round((correct / attempts) * 100)}%` : '0%'}</strong>
+                </div>
+              );
+            })}
+            {!detail.chapterStats.length && <p className="muted">暂无章节练习数据。</p>}
+          </div>
+        </section>
+      </div>
+
+      <div className="detail-grid">
+        <section>
+          <h4>最近错题</h4>
+          <div className="table-list detail-table">
+            {detail.wrongQuestions.slice(0, 8).map((item) => (
+              <div key={item.question_id}>
+                <span>{item.stem}</span>
+                <span>{item.bank_name} · {item.chapter_name}</span>
+                <strong>{item.answer_text || '无答案'}</strong>
+              </div>
+            ))}
+            {!detail.wrongQuestions.length && <p className="muted">暂无未掌握错题。</p>}
+          </div>
+        </section>
+
+        <section>
+          <h4>最近答题</h4>
+          <div className="table-list detail-table">
+            {detail.recentAttempts.slice(0, 8).map((item) => (
+              <div key={item.id}>
+                <span>{item.question_stem}</span>
+                <span>{item.bank_name} · {formatDate(item.created_at)}</span>
+                <strong className={item.correct ? 'ok-text' : 'bad-text'}>{item.correct ? '正确' : '错误'}</strong>
+              </div>
+            ))}
+            {!detail.recentAttempts.length && <p className="muted">暂无答题记录。</p>}
+          </div>
+        </section>
+      </div>
+    </Panel>
+  );
+}
+
+function AdminLogs({ snapshot, store, refresh }) {
+  const [loading, setLoading] = useState(false);
+
+  async function loadLogs() {
+    if (!store.refreshAdminLogs) return;
+    setLoading(true);
+    try {
+      await store.refreshAdminLogs();
+      refresh();
+    } catch (error) {
+      alert(error.message || '加载操作日志失败');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    loadLogs();
+  }, []);
+
+  return (
+    <div className="page-stack">
+      <div className="section-title"><h3>操作日志</h3><p>记录管理员登录、导入题库、生成激活码、删除用户等关键操作。</p></div>
+      <Panel>
+        <div className="button-row">
+          <button className="ghost-btn" onClick={loadLogs}>{loading ? '刷新中...' : '刷新日志'}</button>
+        </div>
+        <div className="table-list log-table">
+          {(snapshot.adminLogs || []).map((log) => (
+            <div key={log.id}>
+              <span>{actionLabel(log.action)}</span>
+              <span>{log.target_type || '-'} / {log.target_id || '-'}</span>
+              <strong>{formatDateTime(log.created_at || log.createdAt)}</strong>
+            </div>
+          ))}
+          {!(snapshot.adminLogs || []).length && <p className="muted">暂无操作日志。</p>}
         </div>
       </Panel>
     </div>
@@ -1094,6 +1244,22 @@ function shuffle(list) {
 function formatDate(timestamp) {
   if (!timestamp) return '';
   return new Date(timestamp).toLocaleDateString('zh-CN');
+}
+
+function formatDateTime(timestamp) {
+  if (!timestamp) return '';
+  return new Date(timestamp).toLocaleString('zh-CN', { hour12: false });
+}
+
+function actionLabel(action) {
+  const labels = {
+    'admin.login': '管理员登录',
+    'user.delete': '删除用户',
+    'user.grant': '手动授权',
+    'bank.import': '导入题库',
+    'activation_codes.create': '生成激活码'
+  };
+  return labels[action] || action || '操作';
 }
 
 async function extractDocxText(file) {

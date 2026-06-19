@@ -11,6 +11,8 @@ export function createCloudflareStore() {
     attempts: [],
     favorites: {},
     wrongQuestions: {},
+    selectedUserDetail: null,
+    adminLogs: [],
     plans: [
       { id: 'plan-month', name: '月会员', type: 'membership', durationDays: 30, price: 29, enabled: true },
       { id: 'plan-year', name: '年会员', type: 'membership', durationDays: 365, price: 99, enabled: true },
@@ -93,6 +95,16 @@ export function createCloudflareStore() {
       const users = await api.listAdminUsers();
       state.users = users.users || [];
       return state.users;
+    },
+    async getAdminUserDetail(userId) {
+      const detail = await api.getAdminUserDetail(userId);
+      state.selectedUserDetail = detail;
+      return detail;
+    },
+    async refreshAdminLogs() {
+      const result = await api.listAdminLogs();
+      state.adminLogs = result.logs || [];
+      return state.adminLogs;
     },
     logout() {
       api.clearSession();
@@ -185,6 +197,7 @@ export function createCloudflareStore() {
     async deleteUser(userId) {
       await api.deleteAdminUser(userId);
       state.users = state.users.filter((user) => user.id !== userId);
+      if (state.selectedUserDetail?.user?.id === userId) state.selectedUserDetail = null;
       return true;
     },
     saveFeedback() {},

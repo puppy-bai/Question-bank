@@ -16,7 +16,9 @@ export default {
       if (route === 'POST /api/auth/login') return login(request, env);
       if (route === 'POST /api/admin/login') return adminLogin(request, env);
       if (route === 'GET /api/admin/users') return listAdminUsers(request, env);
+      if (route === 'GET /api/admin/user-detail') return getAdminUserDetail(request, env);
       if (route === 'DELETE /api/admin/users') return deleteAdminUser(request, env);
+      if (route === 'GET /api/admin/logs') return listAdminLogs(request, env);
       if (route === 'GET /api/banks') return listBanks(request, env);
       if (route === 'GET /api/questions') return listQuestions(request, env);
       if (route === 'POST /api/user-banks/join') return joinBank(request, env);
@@ -83,7 +85,15 @@ async function adminLogin(request, env) {
   const expected = env.ADMIN_PASSWORD || 'admin123';
   if (password !== expected) return fail('\u7ba1\u7406\u5458\u5bc6\u7801\u9519\u8bef', 401, env);
   const admin = await env.DB.prepare('SELECT * FROM users WHERE role = ? LIMIT 1').bind('admin').first();
-  return ok({ user: publicUser(admin || { id: 'admin-default', role: 'admin', name: '\u7ba1\u7406\u5458', phone: 'admin' }), token: 'admin-demo-token' }, env);
+  const user = admin || { id: 'admin-default', role: 'admin', name: '\u7ba1\u7406\u5458', phone: 'admin' };
+  await recordAdminLog(request, env, {
+    adminId: user.id,
+    action: 'admin.login',
+    targetType: 'admin',
+    targetId: user.id,
+    detail: { phone: user.phone }
+  });
+  return ok({ user: publicUser(user), token: 'admin-demo-token' }, env);
 }
 
 async function listAdminUsers(request, env) {
@@ -109,13 +119,104 @@ async function listAdminUsers(request, env) {
   return ok({ users: rows.results || [] }, env);
 }
 
+async function getAdminUserDetail(request, env) {
+  requireAdmin(request);
+  const url = new URL(request.url);
+  const userId = String(url.searchParams.get('userId') || '').trim();
+  if (!userId) return fail('缺少用户 ID', 400, env);
+
+  const user = await env.DB.prepare('SELECT id, role, name, phone, created_at, updated_at FROM users WHERE id = ? AND role = ?')
+    .bind(userId, 'user')
+    .first();
+  if (!user) return fail('用户不存在', 404, env);
+
+  const joinedBanks = await env.DB.prepare(`
+    SELECT b.id, b.name, b.description, b.access_type, b.price, ub.created_at AS joined_at,
+      COUNT(DISTINCT q.id) AS question_count,
+      COUNT(DISTINCT a.id) AS attempt_count,
+      SUM(CASE WHEN a.correct = 1 THEN 1 ELSE 0 END) AS correct_count,
+      COUNT(DISTINCT wq.question_id) AS wrong_count,
+      COUNT(DISTINCT f.question_id) AS favorite_count,
+      MAX(a.created_at) AS last_attempt_at
+    FROM user_banks ub
+    JOIN banks b ON b.id = ub.bank_id
+    LEFT JOIN questions q ON q.bank_id = b.id
+    LEFT JOIN attempts a ON a.bank_id = b.id AND a.user_id = ub.user_id
+    LEFT JOIN wrong_questions wq ON wq.bank_id = b.id AND wq.user_id = ub.user_id AND wq.resolved_at IS NULL
+    LEFT JOIN favorites f ON f.bank_id = b.id AND f.user_id = ub.user_id
+    WHERE ub.user_id = ?
+    GROUP BY b.id, ub.created_at
+    ORDER BY ub.created_at DESC
+  `).bind(userId).all();
+
+  const chapterStats = await env.DB.prepare(`
+    SELECT b.id AS bank_id, b.name AS bank_name, c.id AS chapter_id, c.name AS chapter_name,
+      COUNT(DISTINCT q.id) AS question_count,
+      COUNT(DISTINCT a.id) AS attempt_count,
+      SUM(CASE WHEN a.correct = 1 THEN 1 ELSE 0 END) AS correct_count,
+      COUNT(DISTINCT wq.question_id) AS wrong_count
+    FROM chapters c
+    JOIN banks b ON b.id = c.bank_id
+    LEFT JOIN questions q ON q.chapter_id = c.id
+    LEFT JOIN attempts a ON a.question_id = q.id AND a.user_id = ?
+    LEFT JOIN wrong_questions wq ON wq.question_id = q.id AND wq.user_id = ? AND wq.resolved_at IS NULL
+    WHERE EXISTS (SELECT 1 FROM user_banks ub WHERE ub.user_id = ? AND ub.bank_id = b.id)
+    GROUP BY c.id
+    ORDER BY b.name ASC, c.sort_order ASC
+  `).bind(userId, userId, userId).all();
+
+  const wrongQuestions = await env.DB.prepare(`
+    SELECT wq.question_id, wq.bank_id, wq.chapter_id, wq.updated_at,
+      b.name AS bank_name, c.name AS chapter_name, q.type, q.stem, q.answer_text
+    FROM wrong_questions wq
+    JOIN questions q ON q.id = wq.question_id
+    JOIN banks b ON b.id = wq.bank_id
+    JOIN chapters c ON c.id = wq.chapter_id
+    WHERE wq.user_id = ? AND wq.resolved_at IS NULL
+    ORDER BY wq.updated_at DESC
+    LIMIT 100
+  `).bind(userId).all();
+
+  const exams = await env.DB.prepare(`
+    SELECT source, bank_id, COUNT(*) AS question_count,
+      SUM(CASE WHEN correct = 1 THEN 1 ELSE 0 END) AS correct_count,
+      MIN(created_at) AS started_at,
+      MAX(created_at) AS submitted_at
+    FROM attempts
+    WHERE user_id = ? AND source = 'exam'
+    GROUP BY bank_id, source, CAST(created_at / 600000 AS INTEGER)
+    ORDER BY submitted_at DESC
+    LIMIT 20
+  `).bind(userId).all();
+
+  const recentAttempts = await env.DB.prepare(`
+    SELECT a.id, a.bank_id, a.question_id, a.correct, a.source, a.created_at,
+      b.name AS bank_name, q.stem AS question_stem
+    FROM attempts a
+    JOIN banks b ON b.id = a.bank_id
+    JOIN questions q ON q.id = a.question_id
+    WHERE a.user_id = ?
+    ORDER BY a.created_at DESC
+    LIMIT 30
+  `).bind(userId).all();
+
+  return ok({
+    user,
+    joinedBanks: joinedBanks.results || [],
+    chapterStats: chapterStats.results || [],
+    wrongQuestions: wrongQuestions.results || [],
+    exams: exams.results || [],
+    recentAttempts: recentAttempts.results || []
+  }, env);
+}
+
 async function deleteAdminUser(request, env) {
   requireAdmin(request);
   const body = await readJson(request);
   const userId = String(body.userId || '').trim();
   if (!userId) return fail('缺少用户 ID', 400, env);
 
-  const user = await env.DB.prepare('SELECT id, role FROM users WHERE id = ?').bind(userId).first();
+  const user = await env.DB.prepare('SELECT id, role, name, phone FROM users WHERE id = ?').bind(userId).first();
   if (!user) return fail('用户不存在', 404, env);
   if (user.role !== 'user') return fail('不能删除管理员账号', 403, env);
 
@@ -131,7 +232,25 @@ async function deleteAdminUser(request, env) {
     env.DB.prepare('DELETE FROM users WHERE id = ?').bind(userId)
   ]);
 
+  await recordAdminLog(request, env, {
+    action: 'user.delete',
+    targetType: 'user',
+    targetId: userId,
+    detail: { name: user.name, phone: user.phone }
+  });
+
   return ok({ ok: true, deletedUserId: userId }, env);
+}
+
+async function listAdminLogs(request, env) {
+  requireAdmin(request);
+  const rows = await env.DB.prepare(`
+    SELECT id, admin_id, action, target_type, target_id, detail_json, ip, user_agent, created_at
+    FROM admin_logs
+    ORDER BY created_at DESC
+    LIMIT 100
+  `).all();
+  return ok({ logs: (rows.results || []).map((row) => ({ ...row, detail: parseJson(row.detail_json, {}) })) }, env);
 }
 
 async function listBanks(request, env) {
@@ -265,6 +384,12 @@ async function importBank(request, env) {
   });
 
   await env.DB.batch(statements);
+  await recordAdminLog(request, env, {
+    action: 'bank.import',
+    targetType: 'bank',
+    targetId: bankId,
+    detail: { name: bank.name, questionCount: questions.length, chapterCount: chapterNames.length }
+  });
   return ok({ ok: true, bankId, count: questions.length }, env);
 }
 
@@ -279,6 +404,12 @@ async function createActivationCodes(request, env) {
   const codes = Array.from({ length: count }, () => ({ id: id('code'), code: makeCode(), planId, createdAt: timestamp }));
   await env.DB.batch(codes.map((item) => env.DB.prepare('INSERT INTO activation_codes (id, code, plan_id, created_at) VALUES (?, ?, ?, ?)')
     .bind(item.id, item.code, item.planId, item.createdAt)));
+  await recordAdminLog(request, env, {
+    action: 'activation_codes.create',
+    targetType: 'plan',
+    targetId: planId,
+    detail: { count, planName: plan.name }
+  });
   return ok({ codes }, env);
 }
 
@@ -351,6 +482,28 @@ function publicUser(user) {
   if (!user) return null;
   const { password_hash, ...safeUser } = user;
   return safeUser;
+}
+
+function parseJson(text, fallback) {
+  try {
+    return JSON.parse(text || '');
+  } catch {
+    return fallback;
+  }
+}
+
+async function recordAdminLog(request, env, { adminId = '', action, targetType = '', targetId = '', detail = {} }) {
+  try {
+    const actorId = adminId || request.headers.get('x-user-id') || '';
+    const ip = request.headers.get('cf-connecting-ip') || '';
+    const userAgent = request.headers.get('user-agent') || '';
+    await env.DB.prepare(`
+      INSERT INTO admin_logs (id, admin_id, action, target_type, target_id, detail_json, ip, user_agent, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(id('log'), actorId, action, targetType, targetId, JSON.stringify(detail), ip, userAgent.slice(0, 300), now()).run();
+  } catch (error) {
+    console.warn('recordAdminLog failed', error.message);
+  }
 }
 
 async function hashPassword(password) {

@@ -60,6 +60,8 @@ const initialState = {
   entitlements: {},
   activationCodes: [],
   orders: [],
+  adminLogs: [],
+  selectedUserDetail: null,
   attempts: [],
   wrongQuestions: {},
   favorites: {},
@@ -342,8 +344,78 @@ export function createStore() {
         createdAt: now(),
         paidAt: now()
       });
+      state.adminLogs.unshift(makeAdminLog('user.grant', 'user', userId, { planId, planName: plan.name }));
       save();
       return true;
+    },
+    getAdminUserDetail(userId) {
+      const user = state.users.find((item) => item.id === userId && item.role === 'user');
+      if (!user) return null;
+      const userBankIds = state.userBanks[userId] || [];
+      const joinedBanks = userBankIds.map((bankId) => {
+        const bank = state.banks.find((item) => item.id === bankId);
+        const attempts = state.attempts.filter((item) => item.userId === userId && item.bankId === bankId);
+        const correctCount = attempts.filter((item) => item.correct).length;
+        return {
+          id: bankId,
+          name: bank?.name || '题库',
+          joined_at: user.createdAt,
+          question_count: state.questions.filter((item) => item.bankId === bankId).length,
+          attempt_count: attempts.length,
+          correct_count: correctCount,
+          wrong_count: Object.values(state.wrongQuestions[userId] || {}).filter((item) => item.bankId === bankId && !item.resolvedAt).length,
+          favorite_count: (state.favorites[userId] || []).filter((questionId) => state.questions.find((question) => question.id === questionId)?.bankId === bankId).length,
+          last_attempt_at: Math.max(0, ...attempts.map((item) => item.createdAt || 0))
+        };
+      });
+      const chapterStats = state.banks.flatMap((bank) => bank.chapters.map((chapter) => {
+        const questions = state.questions.filter((item) => item.bankId === bank.id && item.chapterId === chapter.id);
+        const questionIds = questions.map((item) => item.id);
+        const attempts = state.attempts.filter((item) => item.userId === userId && questionIds.includes(item.questionId));
+        return {
+          bank_id: bank.id,
+          bank_name: bank.name,
+          chapter_id: chapter.id,
+          chapter_name: chapter.name,
+          question_count: questions.length,
+          attempt_count: attempts.length,
+          correct_count: attempts.filter((item) => item.correct).length,
+          wrong_count: Object.values(state.wrongQuestions[userId] || {}).filter((item) => item.chapterId === chapter.id && !item.resolvedAt).length
+        };
+      })).filter((item) => userBankIds.includes(item.bank_id));
+      const wrongQuestions = Object.values(state.wrongQuestions[userId] || {}).filter((item) => !item.resolvedAt).map((wrong) => {
+        const question = state.questions.find((item) => item.id === wrong.questionId);
+        const bank = state.banks.find((item) => item.id === wrong.bankId);
+        const chapter = bank?.chapters.find((item) => item.id === wrong.chapterId);
+        return {
+          question_id: wrong.questionId,
+          bank_name: bank?.name || '题库',
+          chapter_name: chapter?.name || '章节',
+          type: question?.type || '',
+          stem: question?.stem || '',
+          answer_text: question?.answerText || '',
+          updated_at: wrong.updatedAt
+        };
+      });
+      const recentAttempts = state.attempts.filter((item) => item.userId === userId).slice(-30).reverse().map((attempt) => ({
+        ...attempt,
+        bank_name: state.banks.find((item) => item.id === attempt.bankId)?.name || '题库',
+        question_stem: state.questions.find((item) => item.id === attempt.questionId)?.stem || ''
+      }));
+      const exams = state.attempts.filter((item) => item.userId === userId && item.source === 'exam').reduce((acc, attempt) => {
+        const key = `${attempt.bankId}-${Math.floor(attempt.createdAt / 600000)}`;
+        acc[key] ||= { bank_id: attempt.bankId, question_count: 0, correct_count: 0, started_at: attempt.createdAt, submitted_at: attempt.createdAt };
+        acc[key].question_count += 1;
+        acc[key].correct_count += attempt.correct ? 1 : 0;
+        acc[key].started_at = Math.min(acc[key].started_at, attempt.createdAt);
+        acc[key].submitted_at = Math.max(acc[key].submitted_at, attempt.createdAt);
+        return acc;
+      }, {});
+      state.selectedUserDetail = { user, joinedBanks, chapterStats, wrongQuestions, recentAttempts, exams: Object.values(exams).reverse() };
+      return state.selectedUserDetail;
+    },
+    refreshAdminLogs() {
+      return state.adminLogs;
     },
     deleteUser(userId) {
       const user = state.users.find((item) => item.id === userId);
@@ -365,6 +437,7 @@ export function createStore() {
         if (item.userId === userId) item.userId = '';
       });
       if (state.currentUserId === userId) state.currentUserId = '';
+      state.adminLogs.unshift(makeAdminLog('user.delete', 'user', userId, { name: user.name, phone: user.phone }));
       save();
       return true;
     },
@@ -517,6 +590,7 @@ export function createStore() {
           analysis: question.analysis || ''
         });
       });
+      state.adminLogs.unshift(makeAdminLog('bank.import', 'bank', bankId, { name, questionCount: validQuestions.length, chapterCount: savedChapters.length }));
       save();
       return { ok: true, bankId, count: validQuestions.length };
     },
@@ -871,6 +945,18 @@ function id(prefix) {
   return `${prefix}-${now()}-${Math.random().toString(16).slice(2)}`;
 }
 
+function makeAdminLog(action, targetType, targetId, detail = {}) {
+  return {
+    id: id('log'),
+    admin_id: 'local-admin',
+    action,
+    target_type: targetType,
+    target_id: targetId,
+    detail,
+    created_at: now()
+  };
+}
+
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
 }
@@ -886,6 +972,8 @@ function migrateState(input) {
   state.entitlements ||= {};
   state.activationCodes ||= [];
   state.orders ||= [];
+  state.adminLogs ||= [];
+  state.selectedUserDetail ||= null;
   state.attempts ||= [];
   state.wrongQuestions ||= {};
   state.favorites ||= {};

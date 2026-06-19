@@ -174,6 +174,11 @@ textarea {
   min-height: 34px;
 }
 
+.ghost-btn.small {
+  min-height: 34px;
+  padding: 0 12px;
+}
+
 .danger-btn.small {
   min-height: 34px;
   padding: 0 12px;
@@ -832,6 +837,42 @@ textarea {
   font-size: 16px;
 }
 
+.user-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  margin-top: 18px;
+}
+
+.detail-grid h4 {
+  margin: 0 0 10px;
+}
+
+.detail-table div {
+  grid-template-columns: minmax(160px, 1.4fr) minmax(120px, 1fr) minmax(70px, auto);
+}
+
+.detail-table span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.log-table {
+  margin-top: 14px;
+}
+
+.log-table div {
+  grid-template-columns: minmax(160px, 1fr) minmax(180px, 1.4fr) minmax(150px, auto);
+}
+
 .code-box {
   white-space: pre-wrap;
   border: 1px dashed #91a0b4;
@@ -932,6 +973,14 @@ textarea {
     grid-template-columns: 1fr;
     align-items: stretch;
   }
+
+  .detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .user-actions {
+    justify-content: flex-start;
+  }
 }
 
 @media (max-width: 680px) {
@@ -979,7 +1028,9 @@ textarea {
   }
 
   .table-list div,
-  .code-table div {
+  .code-table div,
+  .detail-table div,
+  .log-table div {
     grid-template-columns: 1fr;
   }
 
