@@ -23,6 +23,8 @@ export default {
       if (route === 'GET /api/admin/users') return listAdminUsers(request, env);
       if (route === 'GET /api/admin/user-detail') return getAdminUserDetail(request, env);
       if (route === 'DELETE /api/admin/users') return deleteAdminUser(request, env);
+      if (route === 'POST /api/admin/entitlements') return createAdminEntitlement(request, env);
+      if (route === 'DELETE /api/admin/entitlements') return deleteAdminEntitlement(request, env);
       if (route === 'GET /api/admin/logs') return listAdminLogs(request, env);
       if (route === 'GET /api/admin/orders') return listAdminOrders(request, env);
       if (route === 'POST /api/admin/orders/mark-paid') return adminMarkOrderPaid(request, env);
@@ -302,14 +304,81 @@ async function getAdminUserDetail(request, env) {
     LIMIT 30
   `).bind(userId).all();
 
+  const entitlements = await env.DB.prepare(`
+    SELECT e.*, p.name AS plan_name, b.name AS bank_name
+    FROM entitlements e
+    LEFT JOIN plans p ON p.id = e.plan_id
+    LEFT JOIN banks b ON b.id = e.bank_id
+    WHERE e.user_id = ?
+    ORDER BY e.created_at DESC
+  `).bind(userId).all();
+
   return ok({
     user,
     joinedBanks: joinedBanks.results || [],
     chapterStats: chapterStats.results || [],
     wrongQuestions: wrongQuestions.results || [],
     exams: exams.results || [],
-    recentAttempts: recentAttempts.results || []
+    recentAttempts: recentAttempts.results || [],
+    entitlements: (entitlements.results || []).map(readEntitlementRow)
   }, env);
+}
+
+async function createAdminEntitlement(request, env) {
+  requireAdmin(request);
+  const body = await readJson(request);
+  const userId = String(body.userId || body.user_id || '').trim();
+  const planId = String(body.planId || body.plan_id || '').trim();
+  if (!userId || !planId) return fail('缺少用户或套餐', 400, env);
+  const user = await env.DB.prepare('SELECT id, name, phone FROM users WHERE id = ? AND role = ?').bind(userId, 'user').first();
+  if (!user) return fail('用户不存在', 404, env);
+  const plan = await env.DB.prepare('SELECT * FROM plans WHERE id = ?').bind(planId).first();
+  if (!plan) return fail('套餐不存在', 404, env);
+  const entitlement = await grantEntitlement(env, userId, {
+    type: plan.type,
+    bankId: plan.bank_id,
+    planId: plan.id,
+    durationDays: plan.duration_days,
+    source: 'admin'
+  });
+  if (plan.type === 'bank' && plan.bank_id) {
+    await env.DB.prepare('INSERT OR IGNORE INTO user_banks (user_id, bank_id, created_at) VALUES (?, ?, ?)')
+      .bind(userId, plan.bank_id, now())
+      .run();
+  }
+  await recordAdminLog(request, env, {
+    action: 'user.grant',
+    targetType: 'user',
+    targetId: userId,
+    detail: { userName: user.name, phone: user.phone, planId, planName: plan.name, entitlementId: entitlement.id }
+  });
+  return ok({ ok: true, entitlement }, env);
+}
+
+async function deleteAdminEntitlement(request, env) {
+  requireAdmin(request);
+  const body = await readJson(request);
+  const entitlementId = String(body.entitlementId || body.id || '').trim();
+  if (!entitlementId) return fail('缺少授权 ID', 400, env);
+  const entitlement = await env.DB.prepare(`
+    SELECT e.*, p.name AS plan_name, u.name AS user_name, u.phone AS user_phone
+    FROM entitlements e
+    LEFT JOIN plans p ON p.id = e.plan_id
+    LEFT JOIN users u ON u.id = e.user_id
+    WHERE e.id = ?
+  `).bind(entitlementId).first();
+  if (!entitlement) return fail('授权不存在', 404, env);
+  await env.DB.prepare('DELETE FROM entitlements WHERE id = ?').bind(entitlementId).run();
+  if (entitlement.type === 'bank' && entitlement.bank_id && !await hasEntitlement(env, entitlement.user_id, entitlement.bank_id)) {
+    await env.DB.prepare('DELETE FROM user_banks WHERE user_id = ? AND bank_id = ?').bind(entitlement.user_id, entitlement.bank_id).run();
+  }
+  await recordAdminLog(request, env, {
+    action: 'user.revoke_grant',
+    targetType: 'user',
+    targetId: entitlement.user_id,
+    detail: { userName: entitlement.user_name, phone: entitlement.user_phone, planName: entitlement.plan_name, entitlementId }
+  });
+  return ok({ ok: true }, env);
 }
 
 async function deleteAdminUser(request, env) {

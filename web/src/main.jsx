@@ -1136,14 +1136,21 @@ function AdminUsers({ snapshot, store, refresh }) {
         </div>
       </Panel>
       {detailLoading && <Panel><p className="muted">正在加载用户学习详情...</p></Panel>}
-      {selectedDetail?.user && <AdminUserDetail detail={selectedDetail} />}
+      {selectedDetail?.user && <AdminUserDetail detail={selectedDetail} store={store} refresh={refresh} />}
       <Panel title="手动授权">
         <div className="config-grid">
           <label>用户<select value={userId} onChange={(event) => setUserId(event.target.value)}>{normalUsers.map((user) => <option key={user.id} value={user.id}>{user.name} / {user.phone}</option>)}</select></label>
           <label>套餐<select value={planId} onChange={(event) => setPlanId(event.target.value)}>{snapshot.plans.map((plan) => <option key={plan.id} value={plan.id}>{plan.name}</option>)}</select></label>
         </div>
         {selectedUser && <p className="muted">当前用户：{selectedUser.name}，注册时间：{formatDate(selectedUser.created_at || selectedUser.createdAt)}</p>}
-        <button className="primary-btn" onClick={() => { if (store.grantUserPlan(userId, planId)) { refresh(); alert('授权成功'); } }}>手动授权</button>
+        <button className="primary-btn" onClick={async () => {
+          const ok = await store.grantUserPlan(userId, planId);
+          if (ok) {
+            if (store.getAdminUserDetail) await store.getAdminUserDetail(userId);
+            refresh();
+            alert('授权成功');
+          }
+        }}>手动授权</button>
       </Panel>
       <Panel title="授权记录">
         <div className="table-list">
@@ -1296,10 +1303,21 @@ function BankEditor({ bank, store, refresh, onClose }) {
   );
 }
 
-function AdminUserDetail({ detail }) {
+function AdminUserDetail({ detail, store, refresh }) {
   const totalAttempts = detail.joinedBanks.reduce((sum, bank) => sum + Number(bank.attempt_count || 0), 0);
   const totalCorrect = detail.joinedBanks.reduce((sum, bank) => sum + Number(bank.correct_count || 0), 0);
   const accuracy = totalAttempts ? `${Math.round((totalCorrect / totalAttempts) * 100)}%` : '0%';
+  async function removeEntitlement(item) {
+    const label = item.planName || item.bankName || '该授权';
+    if (!confirm(`确定删除「${label}」吗？删除后用户将无法继续使用对应付费题库或会员权限。`)) return;
+    const ok = await store.deleteUserEntitlement?.(item.id, detail.user.id);
+    if (!ok) {
+      alert('删除授权失败');
+      return;
+    }
+    refresh();
+    alert('授权已删除');
+  }
   return (
     <Panel title={`用户详情：${detail.user.name} / ${detail.user.phone}`}>
       <div className="stats-grid compact">
@@ -1308,6 +1326,20 @@ function AdminUserDetail({ detail }) {
         <Metric value={accuracy} label="综合正确率" />
         <Metric value={detail.wrongQuestions.length} label="当前错题" danger />
       </div>
+
+      <section>
+        <h4>授权管理</h4>
+        <div className="table-list detail-table">
+          {(detail.entitlements || []).map((item) => (
+            <div key={item.id}>
+              <span>{item.type === 'membership' ? '会员' : (item.bankName || '题库授权')}</span>
+              <span>{item.planName || '授权'} · 到期：{formatDate(item.expiresAt) || '永久'}</span>
+              <strong><button className="mini-btn danger-mini" onClick={() => removeEntitlement(item)}>删除授权</button></strong>
+            </div>
+          ))}
+          {!(detail.entitlements || []).length && <p className="muted">暂无授权记录。</p>}
+        </div>
+      </section>
 
       <div className="detail-grid">
         <section>
@@ -1680,6 +1712,7 @@ function actionLabel(action) {
     'admin.delete': '删除管理员',
     'user.delete': '删除用户',
     'user.grant': '手动授权',
+    'user.revoke_grant': '删除授权',
     'bank.import': '导入题库',
     'bank.update': '更新题库',
     'bank.delete': '删除题库',

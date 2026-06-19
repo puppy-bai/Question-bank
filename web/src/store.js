@@ -422,6 +422,19 @@ export function createStore() {
       save();
       return true;
     },
+    deleteUserEntitlement(entitlementId, userId) {
+      const grants = state.entitlements[userId] || [];
+      const grant = grants.find((item) => item.id === entitlementId);
+      if (!grant) return false;
+      state.entitlements[userId] = grants.filter((item) => item.id !== entitlementId);
+      if (grant.type === 'bank' && grant.bankId && !api.hasAccess(grant.bankId, userId)) {
+        state.userBanks[userId] = (state.userBanks[userId] || []).filter((bankId) => bankId !== grant.bankId);
+      }
+      state.adminLogs.unshift(makeAdminLog('user.revoke_grant', 'user', userId, { entitlementId, planId: grant.planId }));
+      state.selectedUserDetail = null;
+      save();
+      return true;
+    },
     getAdminUserDetail(userId) {
       const user = state.users.find((item) => item.id === userId && item.role === 'user');
       if (!user) return null;
@@ -485,7 +498,13 @@ export function createStore() {
         acc[key].submitted_at = Math.max(acc[key].submitted_at, attempt.createdAt);
         return acc;
       }, {});
-      state.selectedUserDetail = { user, joinedBanks, chapterStats, wrongQuestions, recentAttempts, exams: Object.values(exams).reverse() };
+      const entitlements = (state.entitlements[userId] || []).map((grant) => ({
+        ...grant,
+        userId,
+        planName: state.plans.find((item) => item.id === grant.planId)?.name || '授权',
+        bankName: state.banks.find((item) => item.id === grant.bankId)?.name || (grant.type === 'membership' ? '全部题库' : '')
+      }));
+      state.selectedUserDetail = { user, joinedBanks, chapterStats, wrongQuestions, recentAttempts, exams: Object.values(exams).reverse(), entitlements };
       return state.selectedUserDetail;
     },
     refreshAdminLogs() {

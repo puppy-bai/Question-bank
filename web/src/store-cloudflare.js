@@ -300,8 +300,19 @@ export function createCloudflareStore() {
       await refreshBanks();
       return true;
     },
-    grantUserPlan() {
-      return false;
+    async grantUserPlan(userId, planId) {
+      await api.createAdminEntitlement(userId, planId);
+      await this.refreshAdminUsers();
+      if (state.selectedUserDetail?.user?.id === userId) await this.getAdminUserDetail(userId);
+      await refreshBanks();
+      return true;
+    },
+    async deleteUserEntitlement(entitlementId, userId) {
+      await api.deleteAdminEntitlement(entitlementId);
+      await this.refreshAdminUsers();
+      if (userId) await this.getAdminUserDetail(userId);
+      await refreshBanks();
+      return true;
     },
     async deleteUser(userId) {
       await api.deleteAdminUser(userId);
