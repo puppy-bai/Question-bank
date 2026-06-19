@@ -238,7 +238,7 @@ async function getAdminUserDetail(request, env) {
     SELECT b.id, b.name, b.description, b.access_type, b.price, ub.created_at AS joined_at,
       COUNT(DISTINCT q.id) AS question_count,
       COUNT(DISTINCT a.id) AS attempt_count,
-      SUM(CASE WHEN a.correct = 1 THEN 1 ELSE 0 END) AS correct_count,
+      COUNT(DISTINCT CASE WHEN a.correct = 1 THEN a.id END) AS correct_count,
       COUNT(DISTINCT wq.question_id) AS wrong_count,
       COUNT(DISTINCT f.question_id) AS favorite_count,
       MAX(a.created_at) AS last_attempt_at
@@ -257,7 +257,7 @@ async function getAdminUserDetail(request, env) {
     SELECT b.id AS bank_id, b.name AS bank_name, c.id AS chapter_id, c.name AS chapter_name,
       COUNT(DISTINCT q.id) AS question_count,
       COUNT(DISTINCT a.id) AS attempt_count,
-      SUM(CASE WHEN a.correct = 1 THEN 1 ELSE 0 END) AS correct_count,
+      COUNT(DISTINCT CASE WHEN a.correct = 1 THEN a.id END) AS correct_count,
       COUNT(DISTINCT wq.question_id) AS wrong_count
     FROM chapters c
     JOIN banks b ON b.id = c.bank_id
