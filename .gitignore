@@ -13,3 +13,4 @@ cloudfunctions/**/package-lock.json
 **/.wrangler/
 external/
 project.private.config.json
+backups/

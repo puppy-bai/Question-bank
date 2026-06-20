@@ -489,6 +489,96 @@ textarea {
   gap: 12px;
 }
 
+.bulk-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.bulk-toolbar > span {
+  color: #607089;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.bulk-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-left: auto;
+}
+
+.check-row,
+.bank-select {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #46566d;
+  font-size: 14px;
+  font-weight: 850;
+}
+
+.check-row input,
+.bank-select input {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  accent-color: #0f766e;
+}
+
+.bank-select {
+  width: max-content;
+  padding: 6px 10px;
+  border: 1px solid #dce6f0;
+  border-radius: 999px;
+  background: #f8fbfd;
+}
+
+.template-toolbar {
+  margin-top: 14px;
+}
+
+.template-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.template-item {
+  width: 100%;
+  min-height: 54px;
+  border: 1px solid #e1e8f0;
+  border-radius: 8px;
+  padding: 12px 14px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  background: #fff;
+  color: #172033;
+  text-align: left;
+}
+
+.template-item.active {
+  border-color: #0f766e;
+  background: #f0fdfa;
+  box-shadow: 0 10px 24px rgba(15, 118, 110, 0.12);
+}
+
+.template-item strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.template-item span {
+  color: #607089;
+  font-size: 13px;
+  font-weight: 850;
+}
+
 .card-heading {
   display: flex;
   align-items: flex-start;
@@ -642,6 +732,39 @@ textarea {
 .import-textarea {
   min-height: 230px;
   font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+.import-success-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px;
+  border: 1px solid #bbf7d0;
+  border-radius: 8px;
+  background: #f0fdf4;
+}
+
+.import-success-card svg {
+  flex: 0 0 auto;
+  color: #0f9f6e;
+}
+
+.import-success-card div {
+  flex: 1 1 auto;
+  min-width: 180px;
+}
+
+.import-success-card strong {
+  display: block;
+  color: #14532d;
+  font-size: 16px;
+  margin-bottom: 4px;
+}
+
+.import-success-card p {
+  margin: 0;
+  color: #3f6b4d;
+  line-height: 1.6;
 }
 
 .practice-shell {

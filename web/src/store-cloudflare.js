@@ -3,10 +3,13 @@ import { defaultExamTemplate } from './store.js';
 
 export function createCloudflareStore() {
   const api = createApiClient();
+  const savedUserId = api.getUserId();
+  const savedAdminToken = api.getAdminToken?.() || '';
   let state = {
-    currentUser: null,
+    currentUser: savedUserId ? { id: savedUserId, role: savedAdminToken ? 'admin' : 'user', name: savedAdminToken ? '管理员' : '用户', phone: '' } : null,
     banks: [],
     questionsByBank: {},
+    examTemplatesByBank: {},
     userBankIds: [],
     attempts: [],
     favorites: {},
@@ -169,8 +172,11 @@ export function createCloudflareStore() {
       await refreshBanks();
       return { ok: true, message: '已加入我的题库' };
     },
-    leaveBank(bankId) {
+    async leaveBank(bankId) {
+      await api.leaveBank(bankId);
       state.userBankIds = state.userBankIds.filter((id) => id !== bankId);
+      await refreshBanks();
+      return true;
     },
     async getQuestions(bankId) {
       return ensureQuestions(bankId);
@@ -206,21 +212,63 @@ export function createCloudflareStore() {
       state.activationCodes = [...state.activationCodes, ...(result.codes || [])];
       return result.codes || [];
     },
-    getWrongQuestions(bankId) {
-      return [];
+    async getWrongQuestions(bankId, chapterId = '') {
+      const result = await api.listWrongQuestions(bankId, chapterId);
+      const questions = result.questions || [];
+      state.questionsByBank[bankId] ||= [];
+      const known = new Map(state.questionsByBank[bankId].map((question) => [question.id, question]));
+      questions.forEach((question) => known.set(question.id, question));
+      state.questionsByBank[bankId] = [...known.values()];
+      return questions;
     },
-    getFavoriteQuestions(bankId) {
-      const ids = Object.keys(state.favorites).filter((id) => state.favorites[id]);
-      return (state.questionsByBank[bankId] || []).filter((question) => ids.includes(question.id));
+    async getFavoriteQuestions(bankId, chapterId = '') {
+      const result = await api.listFavoriteQuestions(bankId, chapterId);
+      const questions = result.questions || [];
+      questions.forEach((question) => { state.favorites[question.id] = true; });
+      state.questionsByBank[bankId] ||= [];
+      const known = new Map(state.questionsByBank[bankId].map((question) => [question.id, question]));
+      questions.forEach((question) => known.set(question.id, question));
+      state.questionsByBank[bankId] = [...known.values()];
+      return questions;
     },
-    getExamTemplate() {
-      return structuredClone(defaultExamTemplate);
+    async getExamTemplates(bankId) {
+      const result = await api.listExamTemplates(bankId);
+      state.examTemplatesByBank[bankId] = result.templates || [];
+      return state.examTemplatesByBank[bankId];
     },
-    saveExamTemplate() {},
+    getExamTemplatesCached(bankId) {
+      return state.examTemplatesByBank[bankId] || [];
+    },
+    getExamTemplate(bankId, templateId = '') {
+      const templates = state.examTemplatesByBank[bankId] || [];
+      const found = templates.find((item) => item.id === templateId) || templates.find((item) => item.isDefault) || templates[0];
+      return structuredClone(found || { ...defaultExamTemplate, id: '', bankId, name: '默认模拟考试', isDefault: true });
+    },
+    async ensureExamTemplates(bankId) {
+      if (!state.examTemplatesByBank[bankId]?.length) await this.getExamTemplates(bankId);
+      return state.examTemplatesByBank[bankId];
+    },
+    async saveExamTemplate(bankId, template) {
+      const payload = { ...template, bankId };
+      const result = template.id ? await api.updateExamTemplate(payload) : await api.createExamTemplate(payload);
+      await this.getExamTemplates(bankId);
+      return result.template;
+    },
+    async createExamTemplate(bankId, template = {}) {
+      const result = await api.createExamTemplate({ ...template, bankId });
+      await this.getExamTemplates(bankId);
+      return result.template;
+    },
+    async deleteExamTemplates(bankId, templateIds) {
+      await api.deleteExamTemplates(bankId, templateIds);
+      await this.getExamTemplates(bankId);
+      return true;
+    },
     buildExamPaper(bankId, config) {
       const pool = [...(state.questionsByBank[bankId] || [])];
-      const total = Math.min(Number(config?.totalQuestions) || defaultExamTemplate.totalQuestions, pool.length);
-      return shuffle(pool).slice(0, total);
+      const chosen = config?.useCustom ? config : this.getExamTemplate(bankId, config?.templateId);
+      const total = Math.min(Number(chosen?.totalQuestions) || defaultExamTemplate.totalQuestions, pool.length);
+      return selectByRatios(pool, total, normalizeTemplate(chosen));
     },
     async submitExam(questions, answerMap) {
       const results = {};
@@ -241,9 +289,22 @@ export function createCloudflareStore() {
       await refreshBanks();
       return true;
     },
+    async bulkUpdateBanks(bankIds, patch) {
+      const ids = [...new Set(bankIds || [])];
+      await Promise.all(ids.map((bankId) => api.updateBank({ id: bankId, ...patch })));
+      await refreshBanks();
+      return true;
+    },
     async deleteBank(bankId) {
       await api.deleteBank(bankId);
       delete state.questionsByBank[bankId];
+      await refreshBanks();
+      return true;
+    },
+    async bulkDeleteBanks(bankIds) {
+      const ids = [...new Set(bankIds || [])];
+      await Promise.all(ids.map((bankId) => api.deleteBank(bankId)));
+      ids.forEach((bankId) => delete state.questionsByBank[bankId]);
       await refreshBanks();
       return true;
     },
@@ -320,7 +381,10 @@ export function createCloudflareStore() {
       if (state.selectedUserDetail?.user?.id === userId) state.selectedUserDetail = null;
       return true;
     },
-    saveFeedback() {},
+    async saveFeedback(content) {
+      await api.saveFeedback(content);
+      return true;
+    },
     exportState() {
       return JSON.stringify(state, null, 2);
     },
@@ -352,4 +416,71 @@ function mapBankRow(row) {
 
 function shuffle(list) {
   return [...list].sort(() => Math.random() - 0.5);
+}
+
+function normalizeTemplate(template) {
+  return {
+    totalQuestions: Math.max(Number(template?.totalQuestions) || defaultExamTemplate.totalQuestions, 1),
+    typeRatios: { ...defaultExamTemplate.typeRatios, ...(template?.typeRatios || {}) },
+    chapterRatios: { ...(template?.chapterRatios || {}) }
+  };
+}
+
+function selectByRatios(pool, total, template) {
+  const chapterRatios = Object.values(template.chapterRatios || {}).some((value) => Number(value) > 0)
+    ? template.chapterRatios
+    : countBy(pool, 'chapterId');
+  const typeQuota = quotas(template.typeRatios, total);
+  const chapterQuota = quotas(chapterRatios, total);
+  const selected = [];
+  const selectedIds = new Set();
+  const typeCount = {};
+  const chapterCount = {};
+
+  shuffle(pool).forEach((question) => {
+    if (selected.length >= total) return;
+    if ((typeCount[question.type] || 0) >= (typeQuota[question.type] || 0)) return;
+    if ((chapterCount[question.chapterId] || 0) >= (chapterQuota[question.chapterId] || 0)) return;
+    selected.push(question);
+    selectedIds.add(question.id);
+    typeCount[question.type] = (typeCount[question.type] || 0) + 1;
+    chapterCount[question.chapterId] = (chapterCount[question.chapterId] || 0) + 1;
+  });
+
+  shuffle(pool).forEach((question) => {
+    if (selected.length >= total || selectedIds.has(question.id)) return;
+    selected.push(question);
+  });
+
+  return shuffle(selected);
+}
+
+function quotas(ratios, total) {
+  const entries = Object.entries(ratios || {})
+    .map(([key, value]) => ({ key, value: Math.max(Number(value) || 0, 0) }))
+    .filter((item) => item.value > 0);
+  if (!entries.length) return {};
+  const sum = entries.reduce((acc, item) => acc + item.value, 0);
+  const output = {};
+  let used = 0;
+  entries.forEach((item) => {
+    output[item.key] = Math.floor((total * item.value) / sum);
+    used += output[item.key];
+  });
+  entries
+    .sort((a, b) => ((total * b.value) / sum) % 1 - (((total * a.value) / sum) % 1))
+    .forEach((item) => {
+      if (used < total) {
+        output[item.key] += 1;
+        used += 1;
+      }
+    });
+  return output;
+}
+
+function countBy(list, field) {
+  return list.reduce((acc, item) => {
+    acc[item[field]] = (acc[item[field]] || 0) + 1;
+    return acc;
+  }, {});
 }

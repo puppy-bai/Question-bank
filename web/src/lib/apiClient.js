@@ -2,8 +2,13 @@ const defaultBaseUrl = 'http://127.0.0.1:8787';
 
 export function createApiClient(options = {}) {
   const baseUrl = (options.baseUrl || import.meta.env.VITE_API_BASE_URL || defaultBaseUrl).replace(/\/$/, '');
-  let userId = localStorage.getItem('question_bank_user_id') || '';
-  let adminToken = localStorage.getItem('question_bank_admin_token') || '';
+  const isAdminPath = typeof window !== 'undefined' && window.location.pathname.startsWith('/admin');
+  const legacyUserId = localStorage.getItem('question_bank_user_id') || '';
+  const savedAdminToken = localStorage.getItem('question_bank_admin_token') || '';
+  let userSessionId = localStorage.getItem('question_bank_user_session_id') || (!savedAdminToken ? legacyUserId : '');
+  let adminSessionId = localStorage.getItem('question_bank_admin_session_id') || (savedAdminToken ? legacyUserId : '');
+  let adminToken = savedAdminToken;
+  let userId = isAdminPath ? adminSessionId : userSessionId;
 
   async function request(path, init = {}) {
     const headers = new Headers(init.headers || {});
@@ -23,19 +28,41 @@ export function createApiClient(options = {}) {
   return {
     baseUrl,
     getUserId: () => userId,
+    getAdminToken: () => (isAdminPath ? adminToken : ''),
     setSession(nextUserId, nextAdminToken = '') {
       userId = nextUserId || '';
-      adminToken = nextAdminToken || '';
-      if (userId) localStorage.setItem('question_bank_user_id', userId);
-      else localStorage.removeItem('question_bank_user_id');
-      if (adminToken) localStorage.setItem('question_bank_admin_token', adminToken);
-      else localStorage.removeItem('question_bank_admin_token');
+      if (nextAdminToken) {
+        adminSessionId = userId;
+        adminToken = nextAdminToken;
+        localStorage.setItem('question_bank_admin_session_id', adminSessionId);
+        localStorage.setItem('question_bank_admin_token', adminToken);
+        localStorage.setItem('question_bank_user_id', adminSessionId);
+      } else {
+        userSessionId = userId;
+        if (userSessionId) {
+          localStorage.setItem('question_bank_user_session_id', userSessionId);
+          localStorage.setItem('question_bank_user_id', userSessionId);
+        } else {
+          localStorage.removeItem('question_bank_user_session_id');
+          if (!adminToken) localStorage.removeItem('question_bank_user_id');
+        }
+      }
     },
     clearSession() {
       userId = '';
-      adminToken = '';
-      localStorage.removeItem('question_bank_user_id');
-      localStorage.removeItem('question_bank_admin_token');
+      if (isAdminPath) {
+        adminSessionId = '';
+        adminToken = '';
+        localStorage.removeItem('question_bank_admin_session_id');
+        localStorage.removeItem('question_bank_admin_token');
+        if (userSessionId) localStorage.setItem('question_bank_user_id', userSessionId);
+        else localStorage.removeItem('question_bank_user_id');
+      } else {
+        userSessionId = '';
+        localStorage.removeItem('question_bank_user_session_id');
+        if (adminSessionId) localStorage.setItem('question_bank_user_id', adminSessionId);
+        else localStorage.removeItem('question_bank_user_id');
+      }
     },
     health: () => request('/api/health', { method: 'GET' }),
     getSession: () => request('/api/auth/session', { method: 'GET' }),
@@ -56,12 +83,17 @@ export function createApiClient(options = {}) {
     markOrderPaid: (orderId) => request('/api/admin/orders/mark-paid', { method: 'POST', body: JSON.stringify({ orderId }) }),
     listBanks: () => request('/api/banks', { method: 'GET' }),
     listQuestions: (bankId) => request(`/api/questions?bankId=${encodeURIComponent(bankId)}`, { method: 'GET' }),
+    listExamTemplates: (bankId) => request(`/api/exam-templates?bankId=${encodeURIComponent(bankId)}`, { method: 'GET' }),
     joinBank: (bankId) => request('/api/user-banks/join', { method: 'POST', body: JSON.stringify({ bankId }) }),
+    leaveBank: (bankId) => request('/api/user-banks/leave', { method: 'POST', body: JSON.stringify({ bankId }) }),
+    listWrongQuestions: (bankId, chapterId = '') => request(`/api/wrong-questions?bankId=${encodeURIComponent(bankId)}&chapterId=${encodeURIComponent(chapterId)}`, { method: 'GET' }),
+    listFavoriteQuestions: (bankId, chapterId = '') => request(`/api/favorites?bankId=${encodeURIComponent(bankId)}&chapterId=${encodeURIComponent(chapterId)}`, { method: 'GET' }),
     listUserOrders: () => request('/api/user/orders', { method: 'GET' }),
     createOrder: (payload) => request('/api/user/orders', { method: 'POST', body: JSON.stringify(payload) }),
     redeemActivationCode: (code) => request('/api/user/activation-codes/redeem', { method: 'POST', body: JSON.stringify({ code }) }),
     submitAnswer: (questionId, answer, source = 'practice') => request('/api/answers', { method: 'POST', body: JSON.stringify({ questionId, answer, source }) }),
     toggleFavorite: (questionId) => request('/api/favorites/toggle', { method: 'POST', body: JSON.stringify({ questionId }) }),
+    saveFeedback: (content) => request('/api/feedback', { method: 'POST', body: JSON.stringify({ content }) }),
     importBank: (payload) => request('/api/admin/import-bank', { method: 'POST', body: JSON.stringify(payload) }),
     updateBank: (payload) => request('/api/admin/banks', { method: 'PUT', body: JSON.stringify(payload) }),
     deleteBank: (bankId) => request('/api/admin/banks', { method: 'DELETE', body: JSON.stringify({ bankId }) }),
@@ -71,6 +103,9 @@ export function createApiClient(options = {}) {
     createQuestion: (payload) => request('/api/admin/questions', { method: 'POST', body: JSON.stringify(payload) }),
     updateQuestion: (payload) => request('/api/admin/questions', { method: 'PUT', body: JSON.stringify(payload) }),
     deleteQuestion: (questionId) => request('/api/admin/questions', { method: 'DELETE', body: JSON.stringify({ questionId }) }),
+    createExamTemplate: (payload) => request('/api/admin/exam-templates', { method: 'POST', body: JSON.stringify(payload) }),
+    updateExamTemplate: (payload) => request('/api/admin/exam-templates', { method: 'PUT', body: JSON.stringify(payload) }),
+    deleteExamTemplates: (bankId, templateIds) => request('/api/admin/exam-templates', { method: 'DELETE', body: JSON.stringify({ bankId, templateIds }) }),
     createActivationCodes: (planId, count) => request('/api/admin/activation-codes', { method: 'POST', body: JSON.stringify({ planId, count }) })
   };
 }

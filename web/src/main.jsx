@@ -35,8 +35,13 @@ import './styles.css';
 
 const useCloudflare = import.meta.env.VITE_USE_CLOUDFLARE === 'true';
 const store = useCloudflare ? createCloudflareStore() : createStore();
-const rememberedLoginKey = 'question_bank_remember_login';
+const rememberedLoginKeys = {
+  user: 'question_bank_remember_user_login',
+  admin: 'question_bank_remember_admin_login'
+};
 const practicePreferenceKey = 'question_bank_practice_preferences';
+const uiStateKey = 'question_bank_ui_state';
+const practiceSessionKey = 'question_bank_practice_session';
 
 const practiceModes = [
   { key: 'sequence', title: '顺序练习', icon: BookOpen },
@@ -61,8 +66,9 @@ function getInitialScreen(currentUser, isAdminPath) {
   return currentUser?.role === 'user' ? 'app' : 'login';
 }
 
-function loadRememberedLogin() {
+function loadRememberedLogin(scope = 'user') {
   try {
+    const rememberedLoginKey = rememberedLoginKeys[scope] || rememberedLoginKeys.user;
     const saved = JSON.parse(localStorage.getItem(rememberedLoginKey) || '{}');
     return { remember: Boolean(saved.remember), phone: saved.phone || '', password: saved.password || '' };
   } catch {
@@ -70,11 +76,13 @@ function loadRememberedLogin() {
   }
 }
 
-function saveRememberedLogin({ phone, password }) {
+function saveRememberedLogin(scope, { phone, password }) {
+  const rememberedLoginKey = rememberedLoginKeys[scope] || rememberedLoginKeys.user;
   localStorage.setItem(rememberedLoginKey, JSON.stringify({ remember: true, phone, password }));
 }
 
-function clearRememberedLogin() {
+function clearRememberedLogin(scope = 'user') {
+  const rememberedLoginKey = rememberedLoginKeys[scope] || rememberedLoginKeys.user;
   localStorage.removeItem(rememberedLoginKey);
 }
 
@@ -94,20 +102,56 @@ function savePracticePreferences(value) {
   localStorage.setItem(practicePreferenceKey, JSON.stringify(value));
 }
 
+function loadUiState() {
+  try {
+    return JSON.parse(localStorage.getItem(uiStateKey) || '{}');
+  } catch {
+    return {};
+  }
+}
+
+function saveUiState(patch) {
+  const current = loadUiState();
+  localStorage.setItem(uiStateKey, JSON.stringify({ ...current, ...patch }));
+}
+
+function loadPracticeSession() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(practiceSessionKey) || 'null');
+    if (!saved?.session?.questions?.length) return null;
+    return saved;
+  } catch {
+    return null;
+  }
+}
+
+function savePracticeSession(payload) {
+  try {
+    localStorage.setItem(practiceSessionKey, JSON.stringify({ ...payload, updatedAt: Date.now() }));
+  } catch (error) {
+    console.warn('save practice session failed', error);
+  }
+}
+
+function clearPracticeSession() {
+  localStorage.removeItem(practiceSessionKey);
+}
+
 function App() {
-  const rememberedLogin = loadRememberedLogin();
   const [snapshot, setSnapshot] = useState(store.snapshot());
   const isAdminPath = window.location.pathname.startsWith('/admin');
+  const loginScope = isAdminPath ? 'admin' : 'user';
+  const rememberedLogin = loadRememberedLogin(loginScope);
   const hasSavedSession = Boolean(store.api?.getUserId?.());
-  const [booting, setBooting] = useState(Boolean(store.bootstrap && hasSavedSession));
   const [screen, setScreen] = useState(() => getInitialScreen(snapshot.currentUser, isAdminPath));
   const [userAuthMode, setUserAuthMode] = useState('login');
-  const [activeTab, setActiveTab] = useState('practice');
-  const [adminTab, setAdminTab] = useState('banks');
-  const [selectedMode, setSelectedMode] = useState('sequence');
-  const [selectedType, setSelectedType] = useState('single');
-  const [selectedBankId, setSelectedBankId] = useState('');
-  const [practice, setPractice] = useState(null);
+  const savedUiState = loadUiState();
+  const [activeTab, setActiveTab] = useState(savedUiState.activeTab || 'practice');
+  const [adminTab, setAdminTab] = useState(savedUiState.adminTab || 'banks');
+  const [selectedMode, setSelectedMode] = useState(savedUiState.selectedMode || 'sequence');
+  const [selectedType, setSelectedType] = useState(savedUiState.selectedType || 'single');
+  const [selectedBankId, setSelectedBankId] = useState(savedUiState.selectedBankId || '');
+  const [practice, setPractice] = useState(() => loadPracticeSession()?.session || null);
   const [examConfig, setExamConfig] = useState(null);
   const [rememberLogin, setRememberLogin] = useState(rememberedLogin.remember);
   const [loginForm, setLoginForm] = useState({ name: '', phone: rememberedLogin.phone, password: rememberedLogin.password });
@@ -119,7 +163,6 @@ function App() {
 
   useEffect(() => {
     if (!store.bootstrap) {
-      setBooting(false);
       return;
     }
     store.bootstrap()
@@ -128,12 +171,15 @@ function App() {
         setSnapshot(next);
         setScreen(getInitialScreen(next.currentUser, isAdminPath));
       })
-      .catch((error) => console.warn('bootstrap failed', error))
-      .finally(() => setBooting(false));
+      .catch((error) => console.warn('bootstrap failed', error));
   }, []);
 
   useEffect(() => {
-    if (rememberLogin) saveRememberedLogin({ phone: loginForm.phone, password: loginForm.password });
+    saveUiState({ activeTab, adminTab, selectedMode, selectedType, selectedBankId });
+  }, [activeTab, adminTab, selectedMode, selectedType, selectedBankId]);
+
+  useEffect(() => {
+    if (rememberLogin) saveRememberedLogin(loginScope, { phone: loginForm.phone, password: loginForm.password });
   }, [rememberLogin, loginForm.phone, loginForm.password]);
 
   async function loginUser() {
@@ -143,8 +189,8 @@ function App() {
     }
     try {
       await store.loginUser(loginForm.phone.trim(), loginForm.password.trim());
-      if (rememberLogin) saveRememberedLogin({ phone: loginForm.phone.trim(), password: loginForm.password });
-      else clearRememberedLogin();
+      if (rememberLogin) saveRememberedLogin('user', { phone: loginForm.phone.trim(), password: loginForm.password });
+      else clearRememberedLogin('user');
       refresh();
       setScreen(isAdminPath ? 'admin-login' : 'app');
       setActiveTab('practice');
@@ -160,8 +206,8 @@ function App() {
     }
     try {
       await store.registerUser(loginForm.name.trim(), loginForm.phone.trim(), loginForm.password.trim());
-      if (rememberLogin) saveRememberedLogin({ phone: loginForm.phone.trim(), password: loginForm.password });
-      else clearRememberedLogin();
+      if (rememberLogin) saveRememberedLogin('user', { phone: loginForm.phone.trim(), password: loginForm.password });
+      else clearRememberedLogin('user');
       refresh();
       setScreen(isAdminPath ? 'admin-login' : 'app');
       setActiveTab('practice');
@@ -182,14 +228,16 @@ function App() {
       alert(error.message || '管理员登录失败');
       return;
     }
-    if (rememberLogin) saveRememberedLogin({ phone: loginForm.phone.trim() || 'admin', password: loginForm.password });
-    else clearRememberedLogin();
+    if (rememberLogin) saveRememberedLogin('admin', { phone: loginForm.phone.trim() || 'admin', password: loginForm.password });
+    else clearRememberedLogin('admin');
     refresh();
     setScreen('admin');
   }
 
   function logout() {
     store.logout();
+    localStorage.removeItem(uiStateKey);
+    clearPracticeSession();
     refresh();
     setScreen(isAdminPath ? 'admin-login' : 'login');
     setPractice(null);
@@ -228,8 +276,8 @@ function App() {
     let title = modeTitle(mode);
     if (mode === 'random') questions = shuffle(questions);
     if (mode === 'special') questions = questions.filter((item) => item.type === selectedType);
-    if (mode === 'wrong') questions = store.getWrongQuestions(bank.id, extra.chapterId || '');
-    if (mode === 'favorite') questions = store.getFavoriteQuestions(bank.id, extra.chapterId || '');
+    if (mode === 'wrong') questions = await store.getWrongQuestions(bank.id, extra.chapterId || '');
+    if (mode === 'favorite') questions = await store.getFavoriteQuestions(bank.id, extra.chapterId || '');
     if (extra.chapterId) {
       questions = questions.filter((item) => item.chapterId === extra.chapterId);
       title = bank.chapters.find((item) => item.id === extra.chapterId)?.name || title;
@@ -238,7 +286,9 @@ function App() {
       alert('当前范围暂无题目');
       return;
     }
-    setPractice({ bank, questions, title, exam: false, randomNoNumber: mode === 'random' });
+    const nextPractice = { bank, questions, title, exam: false, randomNoNumber: mode === 'random' };
+    setPractice(nextPractice);
+    savePracticeSession({ session: nextPractice, index: 0, answers: {}, selected: {}, textAnswer: '', examResult: null });
   }
 
   async function startExam(config) {
@@ -249,12 +299,13 @@ function App() {
       alert('当前配置没有可用题目');
       return;
     }
-    setPractice({ bank, questions, title: '模拟考试', exam: true, randomNoNumber: false });
+    const nextPractice = { bank, questions, title: '模拟考试', exam: true, randomNoNumber: false };
+    setPractice(nextPractice);
+    savePracticeSession({ session: nextPractice, index: 0, answers: {}, selected: {}, textAnswer: '', examResult: null });
     setExamConfig(null);
   }
 
   if (screen === 'login') {
-    if (booting) return <BootScreen text="正在进入题库练习平台" />;
     return (
       <main className="auth-page">
         <section className="auth-card">
@@ -271,7 +322,7 @@ function App() {
             <input placeholder="手机号" value={loginForm.phone} onChange={(event) => setLoginForm({ ...loginForm, phone: event.target.value })} />
             <input placeholder="密码（至少 6 位）" type="password" value={loginForm.password} onChange={(event) => setLoginForm({ ...loginForm, password: event.target.value })} />
             <label className="remember-row">
-              <input type="checkbox" checked={rememberLogin} onChange={(event) => { setRememberLogin(event.target.checked); if (!event.target.checked) clearRememberedLogin(); }} />
+              <input type="checkbox" checked={rememberLogin} onChange={(event) => { setRememberLogin(event.target.checked); if (!event.target.checked) clearRememberedLogin('user'); }} />
               记住账号和密码
             </label>
             <button className="primary-btn" onClick={userAuthMode === 'login' ? loginUser : registerUser}>
@@ -285,7 +336,6 @@ function App() {
   }
 
   if (screen === 'admin-login') {
-    if (booting) return <BootScreen text="正在进入管理后台" />;
     return (
       <main className="auth-page">
         <section className="auth-card">
@@ -297,7 +347,7 @@ function App() {
             <input placeholder="管理员账号" value={loginForm.phone} onChange={(event) => setLoginForm({ ...loginForm, phone: event.target.value })} />
             <input placeholder="管理员密码" type="password" value={loginForm.password} onChange={(event) => setLoginForm({ ...loginForm, password: event.target.value })} />
             <label className="remember-row">
-              <input type="checkbox" checked={rememberLogin} onChange={(event) => { setRememberLogin(event.target.checked); if (!event.target.checked) clearRememberedLogin(); }} />
+              <input type="checkbox" checked={rememberLogin} onChange={(event) => { setRememberLogin(event.target.checked); if (!event.target.checked) clearRememberedLogin('admin'); }} />
               记住账号和密码
             </label>
             <button className="primary-btn" onClick={loginAdmin}>进入管理员后台</button>
@@ -309,7 +359,7 @@ function App() {
   }
 
   if (practice) {
-    return <PracticeScreen session={practice} store={store} refresh={refresh} onExit={() => setPractice(null)} />;
+    return <PracticeScreen session={practice} store={store} refresh={refresh} onExit={() => { clearPracticeSession(); setPractice(null); }} />;
   }
 
   if (screen === 'admin') {
@@ -434,21 +484,6 @@ function Shell({ title, currentUser, tabs, activeTab, onTab, onLogout, children 
   );
 }
 
-function BootScreen({ text }) {
-  return (
-    <main className="boot-page">
-      <section className="boot-card">
-        <div className="brand-mark">题</div>
-        <div>
-          <h1>{text}</h1>
-          <p>正在恢复登录状态，请稍候。</p>
-        </div>
-        <span className="boot-spinner" />
-      </section>
-    </main>
-  );
-}
-
 function PracticeHome({ joinedBanks, selectedMode, selectedType, setSelectedMode, setSelectedType, onStart, stats }) {
   return (
     <div className="page-stack">
@@ -566,7 +601,7 @@ function BankDetail({ bank, store, refresh, onStart, onBack }) {
         </div>
         <div className="hero-actions">
           {!joined && <button className="primary-btn" onClick={join}>{bank.hasAccess ? '加入我的题库' : '解锁后加入'}</button>}
-          {joined && <button className="ghost-btn" onClick={() => { store.leaveBank(bank.id); refresh(); }}>移出我的题库</button>}
+          {joined && <button className="ghost-btn" onClick={async () => { await store.leaveBank(bank.id); refresh(); }}>移出我的题库</button>}
         </div>
       </div>
       {joined && (
@@ -628,14 +663,21 @@ function ExamConfig({ snapshot, config, setConfig, onStart, onCancel }) {
 
 function PracticeScreen({ session, store, refresh, onExit }) {
   const savedPreferences = useMemo(loadPracticePreferences, []);
-  const [index, setIndex] = useState(0);
-  const [answers, setAnswers] = useState({});
-  const [selected, setSelected] = useState({});
-  const [textAnswer, setTextAnswer] = useState('');
+  const savedSession = useMemo(() => loadPracticeSession(), []);
+  const savedMatches = savedSession?.session?.questions?.[0]?.id === session.questions?.[0]?.id
+    && savedSession?.session?.questions?.length === session.questions?.length;
+  const initialIndex = savedMatches ? Math.min(savedSession.index || 0, session.questions.length - 1) : 0;
+  const initialQuestion = session.questions[initialIndex] || session.questions[0];
+  const initialAnswer = savedMatches ? (savedSession.answers || {})[initialQuestion?.id]?.answer || [] : [];
+  const initialSelected = savedMatches ? (Object.keys(savedSession.selected || {}).length ? savedSession.selected : arrayToMap(initialAnswer)) : {};
+  const [index, setIndex] = useState(initialIndex);
+  const [answers, setAnswers] = useState(() => savedMatches ? (savedSession.answers || {}) : {});
+  const [selected, setSelected] = useState(initialSelected);
+  const [textAnswer, setTextAnswer] = useState(() => savedMatches ? (savedSession.textAnswer || initialAnswer.join('\n')) : '');
   const [autoNextOnCorrect, setAutoNextOnCorrect] = useState(savedPreferences.autoNextOnCorrect);
   const [reviewMode, setReviewMode] = useState(savedPreferences.persistentReviewMode);
   const [confirmSubmit, setConfirmSubmit] = useState(false);
-  const [examResult, setExamResult] = useState(null);
+  const [examResult, setExamResult] = useState(() => savedMatches ? (savedSession.examResult || null) : null);
   const autoNextTimer = useRef(null);
   const question = session.questions[index];
   const record = answers[question.id];
@@ -648,6 +690,10 @@ function PracticeScreen({ session, store, refresh, onExit }) {
   useEffect(() => {
     savePracticePreferences({ autoNextOnCorrect, persistentReviewMode: reviewMode });
   }, [autoNextOnCorrect, reviewMode]);
+
+  useEffect(() => {
+    savePracticeSession({ session, index, answers, selected, textAnswer, examResult });
+  }, [session, index, answers, selected, textAnswer, examResult]);
 
   useEffect(() => () => {
     if (autoNextTimer.current) clearTimeout(autoNextTimer.current);
@@ -1700,7 +1746,7 @@ function Profile({ snapshot, store, refresh, onLogout }) {
       <Panel title="练习统计与意见反馈">
         <p className="muted">已答题 {snapshot.stats.attemptCount} 次。你可以把使用问题或题库建议发给管理员。</p>
         <textarea value={feedback} onChange={(event) => setFeedback(event.target.value)} placeholder="请输入反馈内容" />
-        <button className="primary-btn" onClick={() => { if (feedback.trim()) { store.saveFeedback(feedback.trim()); setFeedback(''); alert('反馈已提交'); } }}>提交反馈</button>
+        <button className="primary-btn" onClick={async () => { if (feedback.trim()) { await store.saveFeedback(feedback.trim()); setFeedback(''); alert('反馈已提交'); } }}>提交反馈</button>
       </Panel>
     </div>
   );
@@ -1903,4 +1949,6 @@ async function extractDocxText(file) {
   return paragraphs.join('\n');
 }
 
-createRoot(document.getElementById('root')).render(<App />);
+const rootElement = document.getElementById('root');
+window.__questionBankRoot ||= createRoot(rootElement);
+window.__questionBankRoot.render(<App />);

@@ -31,13 +31,18 @@ export default {
       if (route === 'GET /api/banks') return listBanks(request, env);
       if (route === 'GET /api/questions') return listQuestions(request, env);
       if (route === 'POST /api/user-banks/join') return joinBank(request, env);
+      if (route === 'POST /api/user-banks/leave') return leaveBank(request, env);
       if (route === 'GET /api/user/orders') return listUserOrders(request, env);
       if (route === 'POST /api/user/orders') return createUserOrder(request, env);
       if (route === 'POST /api/user/activation-codes/redeem') return redeemActivationCode(request, env);
       if (route === 'GET /api/pay/notify/epay') return handleEpayNotify(request, env);
       if (route === 'GET /api/pay/return/epay') return handleEpayReturn(request, env);
       if (route === 'POST /api/answers') return submitAnswer(request, env);
+      if (route === 'GET /api/wrong-questions') return listWrongQuestions(request, env);
+      if (route === 'GET /api/favorites') return listFavorites(request, env);
       if (route === 'POST /api/favorites/toggle') return toggleFavorite(request, env);
+      if (route === 'POST /api/feedback') return createFeedback(request, env);
+      if (route === 'GET /api/exam-templates') return listExamTemplates(request, env);
       if (route === 'POST /api/admin/import-bank') return importBank(request, env);
       if (route === 'PUT /api/admin/banks') return updateAdminBank(request, env);
       if (route === 'DELETE /api/admin/banks') return deleteAdminBank(request, env);
@@ -47,6 +52,9 @@ export default {
       if (route === 'POST /api/admin/questions') return createAdminQuestion(request, env);
       if (route === 'PUT /api/admin/questions') return updateAdminQuestion(request, env);
       if (route === 'DELETE /api/admin/questions') return deleteAdminQuestion(request, env);
+      if (route === 'POST /api/admin/exam-templates') return createExamTemplate(request, env);
+      if (route === 'PUT /api/admin/exam-templates') return updateExamTemplate(request, env);
+      if (route === 'DELETE /api/admin/exam-templates') return deleteExamTemplates(request, env);
       if (route === 'POST /api/admin/activation-codes') return createActivationCodes(request, env);
 
       return fail('接口不存在', 404, env, { requestId });
@@ -513,6 +521,15 @@ async function joinBank(request, env) {
   return ok({ ok: true }, env);
 }
 
+async function leaveBank(request, env) {
+  const userId = requireUserId(request);
+  const body = await readJson(request);
+  const bankId = String(body.bankId || '').trim();
+  if (!bankId) return fail('缺少题库 ID', 400, env);
+  await env.DB.prepare('DELETE FROM user_banks WHERE user_id = ? AND bank_id = ?').bind(userId, bankId).run();
+  return ok({ ok: true }, env);
+}
+
 async function listUserOrders(request, env) {
   const userId = requireUserId(request);
   const orders = await env.DB.prepare(`
@@ -684,6 +701,50 @@ async function submitAnswer(request, env) {
   return ok({ correct, answer: expected, answerText: question.answer_text, analysis: question.analysis }, env);
 }
 
+async function listWrongQuestions(request, env) {
+  const userId = requireUserId(request);
+  const url = new URL(request.url);
+  const bankId = String(url.searchParams.get('bankId') || '').trim();
+  const chapterId = String(url.searchParams.get('chapterId') || '').trim();
+  if (!bankId) return fail('缺少 bankId', 400, env);
+  const params = [userId, bankId];
+  let chapterFilter = '';
+  if (chapterId) {
+    chapterFilter = 'AND q.chapter_id = ?';
+    params.push(chapterId);
+  }
+  const rows = await env.DB.prepare(`
+    SELECT q.*
+    FROM wrong_questions wq
+    JOIN questions q ON q.id = wq.question_id
+    WHERE wq.user_id = ? AND wq.bank_id = ? AND wq.resolved_at IS NULL ${chapterFilter}
+    ORDER BY wq.updated_at DESC
+  `).bind(...params).all();
+  return ok({ questions: (rows.results || []).map(readQuestionRow) }, env);
+}
+
+async function listFavorites(request, env) {
+  const userId = requireUserId(request);
+  const url = new URL(request.url);
+  const bankId = String(url.searchParams.get('bankId') || '').trim();
+  const chapterId = String(url.searchParams.get('chapterId') || '').trim();
+  if (!bankId) return fail('缺少 bankId', 400, env);
+  const params = [userId, bankId];
+  let chapterFilter = '';
+  if (chapterId) {
+    chapterFilter = 'AND q.chapter_id = ?';
+    params.push(chapterId);
+  }
+  const rows = await env.DB.prepare(`
+    SELECT q.*
+    FROM favorites f
+    JOIN questions q ON q.id = f.question_id
+    WHERE f.user_id = ? AND f.bank_id = ? ${chapterFilter}
+    ORDER BY f.created_at DESC
+  `).bind(...params).all();
+  return ok({ questions: (rows.results || []).map(readQuestionRow) }, env);
+}
+
 async function toggleFavorite(request, env) {
   const userId = requireUserId(request);
   const body = await readJson(request);
@@ -699,6 +760,17 @@ async function toggleFavorite(request, env) {
     .bind(userId, questionId, question.bank_id, now())
     .run();
   return ok({ favorite: true }, env);
+}
+
+async function createFeedback(request, env) {
+  const userId = requireUserId(request);
+  const body = await readJson(request);
+  const content = String(body.content || '').trim();
+  if (!content) return fail('反馈内容不能为空', 400, env);
+  await env.DB.prepare('INSERT INTO feedback (id, user_id, content, status, created_at) VALUES (?, ?, ?, ?, ?)')
+    .bind(id('fb'), userId, content.slice(0, 2000), 'new', now())
+    .run();
+  return ok({ ok: true }, env);
 }
 
 async function importBank(request, env) {
@@ -930,6 +1002,74 @@ async function deleteAdminQuestion(request, env) {
   return ok({ ok: true }, env);
 }
 
+async function listExamTemplates(request, env) {
+  const url = new URL(request.url);
+  const bankId = String(url.searchParams.get('bankId') || '').trim();
+  if (!bankId) return fail('缺少题库 ID', 400, env);
+  const rows = await env.DB.prepare('SELECT * FROM exam_templates WHERE bank_id = ? ORDER BY is_default DESC, updated_at DESC')
+    .bind(bankId)
+    .all();
+  const templates = (rows.results || []).map(readExamTemplateRow);
+  if (!templates.length) {
+    const created = await ensureDefaultExamTemplate(env, bankId);
+    return ok({ templates: created ? [created] : [] }, env);
+  }
+  return ok({ templates }, env);
+}
+
+async function createExamTemplate(request, env) {
+  requireAdmin(request);
+  const body = await readJson(request);
+  const bankId = String(body.bankId || body.bank_id || '').trim();
+  if (!bankId) return fail('缺少题库 ID', 400, env);
+  const bank = await env.DB.prepare('SELECT id FROM banks WHERE id = ?').bind(bankId).first();
+  if (!bank) return fail('题库不存在', 404, env);
+  const timestamp = now();
+  const template = normalizeExamTemplateBody({ ...body, id: id('tpl'), bankId });
+  const isDefault = body.isDefault || body.is_default ? 1 : 0;
+  if (isDefault) await env.DB.prepare('UPDATE exam_templates SET is_default = 0 WHERE bank_id = ?').bind(bankId).run();
+  await env.DB.prepare(`
+    INSERT INTO exam_templates (id, bank_id, name, template_json, is_default, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).bind(template.id, bankId, template.name, JSON.stringify(template), isDefault, timestamp, timestamp).run();
+  await ensureOneDefaultExamTemplate(env, bankId);
+  await recordAdminLog(request, env, { action: 'exam_template.create', targetType: 'exam_template', targetId: template.id, detail: { bankId, name: template.name } });
+  const saved = await env.DB.prepare('SELECT * FROM exam_templates WHERE id = ?').bind(template.id).first();
+  return ok({ template: readExamTemplateRow(saved) }, env);
+}
+
+async function updateExamTemplate(request, env) {
+  requireAdmin(request);
+  const body = await readJson(request);
+  const templateId = String(body.id || body.templateId || '').trim();
+  const bankId = String(body.bankId || body.bank_id || '').trim();
+  if (!templateId || !bankId) return fail('缺少模板 ID 或题库 ID', 400, env);
+  const existing = await env.DB.prepare('SELECT * FROM exam_templates WHERE id = ? AND bank_id = ?').bind(templateId, bankId).first();
+  if (!existing) return fail('模板不存在', 404, env);
+  const template = normalizeExamTemplateBody({ ...body, id: templateId, bankId });
+  const isDefault = body.isDefault || body.is_default ? 1 : 0;
+  if (isDefault) await env.DB.prepare('UPDATE exam_templates SET is_default = 0 WHERE bank_id = ?').bind(bankId).run();
+  await env.DB.prepare(`
+    UPDATE exam_templates SET name = ?, template_json = ?, is_default = ?, updated_at = ? WHERE id = ? AND bank_id = ?
+  `).bind(template.name, JSON.stringify(template), isDefault, now(), templateId, bankId).run();
+  await ensureOneDefaultExamTemplate(env, bankId);
+  await recordAdminLog(request, env, { action: 'exam_template.update', targetType: 'exam_template', targetId: templateId, detail: { bankId, name: template.name, isDefault } });
+  const saved = await env.DB.prepare('SELECT * FROM exam_templates WHERE id = ?').bind(templateId).first();
+  return ok({ template: readExamTemplateRow(saved) }, env);
+}
+
+async function deleteExamTemplates(request, env) {
+  requireAdmin(request);
+  const body = await readJson(request);
+  const bankId = String(body.bankId || body.bank_id || '').trim();
+  const templateIds = Array.isArray(body.templateIds) ? [...new Set(body.templateIds.map((item) => String(item).trim()).filter(Boolean))] : [];
+  if (!bankId || !templateIds.length) return fail('缺少题库 ID 或模板 ID', 400, env);
+  await env.DB.batch(templateIds.map((templateId) => env.DB.prepare('DELETE FROM exam_templates WHERE id = ? AND bank_id = ?').bind(templateId, bankId)));
+  await ensureOneDefaultExamTemplate(env, bankId);
+  await recordAdminLog(request, env, { action: 'exam_template.bulkDelete', targetType: 'exam_template', targetId: templateIds.join(','), detail: { bankId, count: templateIds.length } });
+  return ok({ ok: true }, env);
+}
+
 async function createActivationCodes(request, env) {
   requireAdmin(request);
   const body = await readJson(request);
@@ -963,6 +1103,73 @@ function readQuestionRow(row) {
     analysis: row.analysis,
     sortOrder: row.sort_order
   };
+}
+
+function readExamTemplateRow(row) {
+  const parsed = parseJson(row.template_json, {});
+  return {
+    id: row.id,
+    bankId: row.bank_id,
+    name: row.name || parsed.name || '默认模拟考试',
+    isDefault: Boolean(row.is_default),
+    totalQuestions: Math.max(Number(parsed.totalQuestions) || 30, 1),
+    typeRatios: {
+      single: Number(parsed.typeRatios?.single ?? 50) || 0,
+      multiple: Number(parsed.typeRatios?.multiple ?? 20) || 0,
+      judge: Number(parsed.typeRatios?.judge ?? 30) || 0
+    },
+    chapterRatios: parsed.chapterRatios || {},
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
+}
+
+function normalizeExamTemplateBody(body) {
+  return {
+    id: String(body.id || body.templateId || '').trim(),
+    bankId: String(body.bankId || body.bank_id || '').trim(),
+    name: String(body.name || '默认模拟考试').trim() || '默认模拟考试',
+    totalQuestions: Math.max(Number(body.totalQuestions) || 30, 1),
+    typeRatios: {
+      single: Number(body.typeRatios?.single ?? 50) || 0,
+      multiple: Number(body.typeRatios?.multiple ?? 20) || 0,
+      judge: Number(body.typeRatios?.judge ?? 30) || 0
+    },
+    chapterRatios: body.chapterRatios || {}
+  };
+}
+
+async function ensureDefaultExamTemplate(env, bankId) {
+  const bank = await env.DB.prepare('SELECT id FROM banks WHERE id = ?').bind(bankId).first();
+  if (!bank) return null;
+  const timestamp = now();
+  const template = normalizeExamTemplateBody({
+    id: `tpl-${bankId}-default`,
+    bankId,
+    name: '默认模拟考试',
+    totalQuestions: 30,
+    typeRatios: { single: 50, multiple: 20, judge: 30 },
+    chapterRatios: {}
+  });
+  await env.DB.prepare(`
+    INSERT OR IGNORE INTO exam_templates (id, bank_id, name, template_json, is_default, created_at, updated_at)
+    VALUES (?, ?, ?, ?, 1, ?, ?)
+  `).bind(template.id, bankId, template.name, JSON.stringify(template), timestamp, timestamp).run();
+  const saved = await env.DB.prepare('SELECT * FROM exam_templates WHERE id = ?').bind(template.id).first();
+  return saved ? readExamTemplateRow(saved) : null;
+}
+
+async function ensureOneDefaultExamTemplate(env, bankId) {
+  const countRow = await env.DB.prepare('SELECT COUNT(*) AS count FROM exam_templates WHERE bank_id = ?').bind(bankId).first();
+  if (!Number(countRow?.count || 0)) {
+    await ensureDefaultExamTemplate(env, bankId);
+    return;
+  }
+  const defaultRow = await env.DB.prepare('SELECT id FROM exam_templates WHERE bank_id = ? AND is_default = 1 LIMIT 1').bind(bankId).first();
+  if (!defaultRow) {
+    const first = await env.DB.prepare('SELECT id FROM exam_templates WHERE bank_id = ? ORDER BY updated_at DESC LIMIT 1').bind(bankId).first();
+    if (first) await env.DB.prepare('UPDATE exam_templates SET is_default = 1 WHERE id = ?').bind(first.id).run();
+  }
 }
 
 function readOrderRow(row) {

@@ -66,11 +66,14 @@ const initialState = {
   wrongQuestions: {},
   favorites: {},
   examTemplates: {
-    'bank-electric': {
+    'bank-electric': [{
+      id: 'tpl-electric-default',
+      name: '默认模拟考试',
+      isDefault: true,
       totalQuestions: 20,
       typeRatios: { single: 50, multiple: 20, judge: 30 },
       chapterRatios: { 'ch-basic': 35, 'ch-safety': 35, 'ch-maintenance': 30 }
-    }
+    }]
   },
   feedback: []
 };
@@ -632,15 +635,41 @@ export function createStore() {
       save();
       return state.favorites[user.id].includes(questionId);
     },
-    getExamTemplate(bankId) {
-      return clone(state.examTemplates[bankId] || defaultExamTemplate);
+    getExamTemplates(bankId) {
+      return clone(ensureExamTemplates(state, bankId));
+    },
+    getExamTemplate(bankId, templateId = '') {
+      const templates = ensureExamTemplates(state, bankId);
+      const found = templates.find((item) => item.id === templateId) || templates.find((item) => item.isDefault) || templates[0];
+      return clone(found || makeExamTemplate(bankId, { isDefault: true }));
     },
     saveExamTemplate(bankId, template) {
-      state.examTemplates[bankId] = normalizeTemplate(template);
+      const templates = ensureExamTemplates(state, bankId);
+      const templateId = template.id || id('tpl');
+      const normalized = makeExamTemplate(bankId, { ...template, id: templateId });
+      const index = templates.findIndex((item) => item.id === templateId);
+      if (normalized.isDefault) templates.forEach((item) => { item.isDefault = false; });
+      if (index >= 0) templates[index] = normalized;
+      else templates.push(normalized);
+      if (!templates.some((item) => item.isDefault)) templates[0].isDefault = true;
       save();
+      return normalized;
+    },
+    createExamTemplate(bankId, template = {}) {
+      return api.saveExamTemplate(bankId, { ...template, id: id('tpl'), name: template.name || '新考试模板' });
+    },
+    deleteExamTemplates(bankId, templateIds) {
+      const ids = [...new Set(templateIds || [])];
+      const templates = ensureExamTemplates(state, bankId);
+      state.examTemplates[bankId] = templates.filter((item) => !ids.includes(item.id));
+      if (!state.examTemplates[bankId].length) state.examTemplates[bankId] = [makeExamTemplate(bankId, { isDefault: true })];
+      if (!state.examTemplates[bankId].some((item) => item.isDefault)) state.examTemplates[bankId][0].isDefault = true;
+      state.adminLogs.unshift(makeAdminLog('examTemplate.bulkDelete', 'exam_template', ids.join(','), { bankId, count: ids.length }));
+      save();
+      return true;
     },
     buildExamPaper(bankId, config) {
-      const chosen = config?.useCustom ? config : (state.examTemplates[bankId] || defaultExamTemplate);
+      const chosen = config?.useCustom ? config : api.getExamTemplate(bankId, config?.templateId);
       const template = normalizeTemplate(chosen);
       const pool = state.questions.filter((item) => item.bankId === bankId);
       const total = Math.min(Math.max(Number(template.totalQuestions) || 20, 1), pool.length);
@@ -658,6 +687,15 @@ export function createStore() {
       state.adminLogs.unshift(makeAdminLog('bank.update', 'bank', bankId, patch));
       save();
     },
+    bulkUpdateBanks(bankIds, patch) {
+      const ids = [...new Set(bankIds || [])];
+      ids.forEach((bankId) => {
+        const bank = state.banks.find((item) => item.id === bankId);
+        if (bank) Object.assign(bank, patch);
+      });
+      state.adminLogs.unshift(makeAdminLog('bank.bulkUpdate', 'bank', ids.join(','), { count: ids.length, ...patch }));
+      save();
+    },
     deleteBank(bankId) {
       state.banks = state.banks.filter((item) => item.id !== bankId);
       state.questions = state.questions.filter((item) => item.bankId !== bankId);
@@ -666,6 +704,17 @@ export function createStore() {
       });
       delete state.examTemplates[bankId];
       state.adminLogs.unshift(makeAdminLog('bank.delete', 'bank', bankId, {}));
+      save();
+    },
+    bulkDeleteBanks(bankIds) {
+      const ids = [...new Set(bankIds || [])];
+      state.banks = state.banks.filter((item) => !ids.includes(item.id));
+      state.questions = state.questions.filter((item) => !ids.includes(item.bankId));
+      Object.keys(state.userBanks).forEach((userId) => {
+        state.userBanks[userId] = state.userBanks[userId].filter((idValue) => !ids.includes(idValue));
+      });
+      ids.forEach((bankId) => delete state.examTemplates[bankId]);
+      state.adminLogs.unshift(makeAdminLog('bank.bulkDelete', 'bank', ids.join(','), { count: ids.length }));
       save();
     },
     createChapter({ bankId, name }) {
@@ -1069,11 +1118,44 @@ function isAnswerLine(line) {
 
 function normalizeTemplate(template) {
   return {
+    id: template?.id || '',
+    bankId: template?.bankId || template?.bank_id || '',
+    name: String(template?.name || '默认模拟考试').trim(),
+    isDefault: Boolean(template?.isDefault ?? template?.is_default),
     totalQuestions: Math.max(Number(template?.totalQuestions) || defaultExamTemplate.totalQuestions, 1),
     typeRatios: { ...defaultExamTemplate.typeRatios, ...(template?.typeRatios || {}) },
     chapterRatios: { ...(template?.chapterRatios || {}) },
     useCustom: Boolean(template?.useCustom)
   };
+}
+
+function makeExamTemplate(bankId, template = {}) {
+  return normalizeTemplate({
+    ...defaultExamTemplate,
+    ...template,
+    id: template.id || id('tpl'),
+    bankId,
+    name: template.name || '默认模拟考试',
+    isDefault: template.isDefault ?? template.is_default ?? false
+  });
+}
+
+function ensureExamTemplates(state, bankId) {
+  const current = stateExamTemplatesSafe(state, bankId);
+  state.examTemplates[bankId] = current;
+  return current;
+}
+
+function stateExamTemplatesSafe(state, bankId) {
+  const current = state.examTemplates?.[bankId];
+  if (Array.isArray(current)) {
+    const templates = current.map((item, index) => makeExamTemplate(bankId, { ...item, isDefault: item.isDefault || (!current.some((tpl) => tpl.isDefault) && index === 0) }));
+    return templates.length ? templates : [makeExamTemplate(bankId, { isDefault: true })];
+  }
+  if (current && typeof current === 'object') {
+    return [makeExamTemplate(bankId, { ...current, id: current.id || `tpl-${bankId}-default`, name: current.name || '默认模拟考试', isDefault: true })];
+  }
+  return [makeExamTemplate(bankId, { id: `tpl-${bankId}-default`, isDefault: true })];
 }
 
 function selectByRatios(pool, total, template) {
