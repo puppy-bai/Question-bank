@@ -392,7 +392,7 @@ function App() {
         {adminTab === 'orders' && <AdminOrders snapshot={snapshot} store={store} refresh={refresh} />}
         {adminTab === 'backup' && <AdminBackup store={store} refresh={refresh} />}
         {adminTab === 'logs' && <AdminLogs snapshot={snapshot} store={store} refresh={refresh} />}
-        {adminTab === 'stats' && <AdminStats snapshot={snapshot} />}
+        {adminTab === 'stats' && <AdminStats snapshot={snapshot} store={store} />}
       </Shell>
     );
   }
@@ -422,6 +422,7 @@ function App() {
           setSelectedType={setSelectedType}
           onStart={startMode}
           stats={snapshot.stats}
+          onResume={(session) => setPractice(session)}
         />
       )}
       {activeTab === 'banks' && (
@@ -484,7 +485,9 @@ function Shell({ title, currentUser, tabs, activeTab, onTab, onLogout, children 
   );
 }
 
-function PracticeHome({ joinedBanks, selectedMode, selectedType, setSelectedMode, setSelectedType, onStart, stats }) {
+function PracticeHome({ joinedBanks, selectedMode, selectedType, setSelectedMode, setSelectedType, onStart, stats, onResume }) {
+  const savedPractice = loadPracticeSession();
+  const resumable = savedPractice?.session?.questions?.length ? savedPractice : null;
   return (
     <div className="page-stack">
       <div className="stats-grid">
@@ -492,6 +495,18 @@ function PracticeHome({ joinedBanks, selectedMode, selectedType, setSelectedMode
         <Metric value={stats.wrongCount} label="错题" danger />
         <Metric value={stats.favoriteCount} label="收藏" />
       </div>
+
+      {resumable && (
+        <Panel title="继续上次练习">
+          <div className="resume-row">
+            <div>
+              <strong>{resumable.session.title}</strong>
+              <p>{resumable.session.bank?.name || '题库'} · 第 {(resumable.index || 0) + 1} / {resumable.session.questions.length} 题</p>
+            </div>
+            <button className="primary-btn" onClick={() => onResume(resumable.session)}>继续练习</button>
+          </div>
+        </Panel>
+      )}
 
       <div className="mode-grid">
         {practiceModes.map((mode, index) => {
@@ -913,14 +928,110 @@ function ResultScreen({ result, onExit }) {
 
 function AdminBanks({ snapshot, store, refresh }) {
   const [editingBankId, setEditingBankId] = useState('');
+  const [selectedBankIds, setSelectedBankIds] = useState([]);
+  const [bulkPatch, setBulkPatch] = useState({ accessType: 'paid', price: 0 });
+  const [searchText, setSearchText] = useState('');
   const editingBank = snapshot.banks.find((bank) => bank.id === editingBankId);
+  const filteredBanks = useMemo(() => {
+    const keyword = searchText.trim().toLowerCase();
+    if (!keyword) return snapshot.banks;
+    return snapshot.banks.filter((bank) => {
+      return [bank.name, bank.description, bank.id, ...(bank.chapters || []).map((chapter) => chapter.name)]
+        .filter(Boolean)
+        .some((text) => String(text).toLowerCase().includes(keyword));
+    });
+  }, [snapshot.banks, searchText]);
+  const allBankIds = filteredBanks.map((bank) => bank.id);
+  const selectedCount = selectedBankIds.filter((id) => allBankIds.includes(id)).length;
+  const allSelected = Boolean(allBankIds.length) && selectedCount === allBankIds.length;
+
+  function toggleBank(bankId) {
+    setSelectedBankIds((current) => current.includes(bankId) ? current.filter((id) => id !== bankId) : [...current, bankId]);
+  }
+
+  async function bulkDelete() {
+    if (!selectedCount) return alert('请先选择要删除的题库');
+    if (!confirm(`确定批量删除 ${selectedCount} 个题库吗？相关章节、题目、用户答题记录也会一起删除。`)) return;
+    await store.bulkDeleteBanks(selectedBankIds);
+    setSelectedBankIds([]);
+    setEditingBankId('');
+    refresh();
+  }
+
+  async function bulkUpdatePrice() {
+    if (!selectedCount) return alert('请先选择要改价的题库');
+    await store.bulkUpdateBanks(selectedBankIds, {
+      accessType: bulkPatch.accessType,
+      price: Number(bulkPatch.price) || 0
+    });
+    refresh();
+    alert(`已更新 ${selectedCount} 个题库的收费方式和价格`);
+  }
+
+  function exportFilteredBanks() {
+    const payload = filteredBanks.map((bank) => ({
+      id: bank.id,
+      name: bank.name,
+      description: bank.description,
+      accessType: bank.accessType,
+      price: bank.price,
+      status: bank.status,
+      chapterCount: bank.chapterCount,
+      questionCount: bank.questionCount,
+      chapters: bank.chapters
+    }));
+    downloadJson(payload, `题库导出-${Date.now()}.json`);
+  }
+
   return (
     <div className="page-stack">
       <div className="section-title"><h3>题库管理</h3><p>发布、隐藏、重命名、删除题库，并配置免费或付费属性。</p></div>
+      <Panel>
+        <div className="template-toolbar">
+          <input className="search-input" value={searchText} onChange={(event) => setSearchText(event.target.value)} placeholder="搜索题库名称、简介、章节" />
+          <button className="ghost-btn" onClick={exportFilteredBanks}><Download size={16} />导出当前筛选</button>
+        </div>
+        <div className="bulk-toolbar">
+          <label className="check-row">
+            <input
+              type="checkbox"
+              checked={allSelected}
+              onChange={(event) => setSelectedBankIds((current) => {
+                const next = new Set(current);
+                if (event.target.checked) filteredBanks.forEach((bank) => next.add(bank.id));
+                else filteredBanks.forEach((bank) => next.delete(bank.id));
+                return [...next];
+              })}
+            />
+            全选
+          </label>
+          <span>已选择 {selectedCount} / {snapshot.banks.length} 个题库</span>
+          <div className="bulk-actions">
+            <select value={bulkPatch.accessType} onChange={(event) => setBulkPatch({ ...bulkPatch, accessType: event.target.value })}>
+              <option value="free">免费</option>
+              <option value="paid">付费/授权</option>
+            </select>
+            <input
+              className="compact-input"
+              type="number"
+              min="0"
+              value={bulkPatch.price}
+              onChange={(event) => setBulkPatch({ ...bulkPatch, price: event.target.value })}
+              placeholder="价格"
+            />
+            <button className="ghost-btn" disabled={!selectedCount} onClick={bulkUpdatePrice}>批量改价</button>
+            <button className="danger-btn" disabled={!selectedCount} onClick={bulkDelete}><Trash2 size={16} />批量删除</button>
+          </div>
+        </div>
+      </Panel>
       {editingBank && <BankEditor bank={editingBank} store={store} refresh={refresh} onClose={() => setEditingBankId('')} />}
       <div className="bank-grid">
-        {snapshot.banks.map((bank) => (
+        {filteredBanks.map((bank) => (
           <article className="bank-card" key={bank.id}>
+            <label className="bank-select">
+              <input type="checkbox" checked={selectedBankIds.includes(bank.id)} onChange={() => toggleBank(bank.id)} />
+              选择
+            </label>
             <div className="card-heading">
               <h3>{bank.name}</h3>
               <span className={bank.accessType === 'free' ? 'badge free' : 'badge paid'}>{bank.accessType === 'free' ? '免费' : `¥${bank.price}`}</span>
@@ -1076,20 +1187,130 @@ function AdminImport({ store, refresh }) {
 
 function AdminTemplates({ snapshot, store, refresh }) {
   const [bankId, setBankId] = useState(snapshot.banks[0]?.id || '');
-  const [template, setTemplate] = useState(store.getExamTemplate(bankId));
+  const [templates, setTemplates] = useState(() => store.getExamTemplatesCached?.(bankId) || [store.getExamTemplate(bankId)]);
+  const [template, setTemplate] = useState(() => store.getExamTemplate(bankId));
+  const [selectedTemplateIds, setSelectedTemplateIds] = useState([]);
+  const [loading, setLoading] = useState(false);
   const bank = snapshot.banks.find((item) => item.id === bankId);
+
+  useEffect(() => {
+    if (!bankId) return;
+    let cancelled = false;
+    setLoading(true);
+    Promise.resolve(store.ensureExamTemplates ? store.ensureExamTemplates(bankId) : store.getExamTemplatesCached?.(bankId))
+      .then((items) => {
+        if (cancelled) return;
+        const nextTemplates = items?.length ? items : [store.getExamTemplate(bankId)];
+        setTemplates(nextTemplates);
+        setTemplate((current) => nextTemplates.find((item) => item.id === current?.id) || nextTemplates.find((item) => item.isDefault) || nextTemplates[0]);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [bankId, snapshot.banks.length]);
+
   function changeBank(nextId) {
     setBankId(nextId);
+    setSelectedTemplateIds([]);
     setTemplate(store.getExamTemplate(nextId));
   }
+
+  function toggleTemplate(templateId) {
+    setSelectedTemplateIds((current) => current.includes(templateId) ? current.filter((id) => id !== templateId) : [...current, templateId]);
+  }
+
+  async function reloadTemplates(nextActiveId = '') {
+    const items = store.ensureExamTemplates ? await store.ensureExamTemplates(bankId) : (store.getExamTemplatesCached?.(bankId) || []);
+    const nextTemplates = items?.length ? items : [store.getExamTemplate(bankId)];
+    setTemplates(nextTemplates);
+    setTemplate(nextTemplates.find((item) => item.id === nextActiveId) || nextTemplates.find((item) => item.id === template?.id) || nextTemplates.find((item) => item.isDefault) || nextTemplates[0]);
+    setSelectedTemplateIds((current) => current.filter((id) => nextTemplates.some((item) => item.id === id)));
+    refresh();
+  }
+
+  async function addTemplate() {
+    if (!bankId) return;
+    const created = await store.createExamTemplate(bankId, {
+      ...defaultExamTemplate,
+      name: `考试模板 ${templates.length + 1}`,
+      isDefault: !templates.length
+    });
+    await reloadTemplates(created.id);
+  }
+
+  async function copyTemplate(source) {
+    const created = await store.createExamTemplate(bankId, {
+      ...source,
+      id: '',
+      name: `${source.name || '考试模板'} 副本`,
+      isDefault: false
+    });
+    await reloadTemplates(created.id);
+  }
+
+  async function saveTemplate(patch = {}) {
+    const saved = await store.saveExamTemplate(bankId, { ...template, ...patch });
+    await reloadTemplates(saved?.id || template.id);
+    alert('模板已保存');
+  }
+
+  async function deleteSelectedTemplates() {
+    if (!selectedTemplateIds.length) return alert('请先选择要删除的模板');
+    if (templates.length <= selectedTemplateIds.length) return alert('至少保留一个考试模板');
+    if (!confirm(`确定删除 ${selectedTemplateIds.length} 个考试模板吗？`)) return;
+    await store.deleteExamTemplates(bankId, selectedTemplateIds);
+    setSelectedTemplateIds([]);
+    await reloadTemplates();
+  }
+
+  const allTemplateSelected = Boolean(templates.length) && selectedTemplateIds.length === templates.length;
+
   return (
     <div className="page-stack">
       <div className="section-title"><h3>考试模板</h3><p>管理员设置默认模拟考试配比，用户也可以在考试前选择自定义。</p></div>
       <Panel>
-        <select value={bankId} onChange={(event) => changeBank(event.target.value)}>
-          {snapshot.banks.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-        </select>
+        <div className="template-toolbar">
+          <select value={bankId} onChange={(event) => changeBank(event.target.value)}>
+            {snapshot.banks.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+          </select>
+          <button className="primary-btn" onClick={addTemplate}><Plus size={17} />添加模板</button>
+          <button className="danger-btn" disabled={!selectedTemplateIds.length} onClick={deleteSelectedTemplates}><Trash2 size={16} />批量删除</button>
+        </div>
+        {loading && <p className="tiny">正在加载模板...</p>}
+        <div className="template-list">
+          {templates.map((item) => (
+            <div className={`template-item ${template?.id === item.id ? 'active' : ''}`} key={item.id}>
+              <label className="check-row">
+                <input
+                  type="checkbox"
+                  checked={selectedTemplateIds.includes(item.id)}
+                  onChange={() => toggleTemplate(item.id)}
+                />
+              </label>
+              <button className="template-select" onClick={() => setTemplate(structuredClone(item))}>
+                <strong>{item.name}</strong>
+                <span>{item.totalQuestions || 30} 题 · 单选 {item.typeRatios?.single || 0}% · 多选 {item.typeRatios?.multiple || 0}% · 判断 {item.typeRatios?.judge || 0}%</span>
+              </button>
+              <div className="template-actions">
+                <span className={item.isDefault ? 'badge free' : 'badge'}>{item.isDefault ? '默认' : '模板'}</span>
+                <button className="mini-btn" onClick={() => copyTemplate(item)}>复制</button>
+              </div>
+            </div>
+          ))}
+        </div>
+        {!!templates.length && (
+          <label className="check-row template-select-all">
+            <input
+              type="checkbox"
+              checked={allTemplateSelected}
+              onChange={(event) => setSelectedTemplateIds(event.target.checked ? templates.map((item) => item.id) : [])}
+            />
+            全选当前题库模板
+          </label>
+        )}
         <div className="config-grid">
+          <label>模板名称<input value={template.name || ''} onChange={(event) => setTemplate({ ...template, name: event.target.value })} /></label>
           <label>总题数<input type="number" value={template.totalQuestions} onChange={(event) => setTemplate({ ...template, totalQuestions: Number(event.target.value) || 30 })} /></label>
           {['single', 'multiple', 'judge'].map((type) => <label key={type}>{typeLabels[type]}占比<input type="number" value={template.typeRatios[type] || 0} onChange={(event) => setTemplate({ ...template, typeRatios: { ...template.typeRatios, [type]: Number(event.target.value) || 0 } })} /></label>)}
         </div>
@@ -1099,7 +1320,10 @@ function AdminTemplates({ snapshot, store, refresh }) {
           <div className="config-grid">
             {bank.chapters.map((chapter) => <label key={chapter.id}>{chapter.name}<input type="number" value={template.chapterRatios[chapter.id] || 0} onChange={(event) => setTemplate({ ...template, chapterRatios: { ...template.chapterRatios, [chapter.id]: Number(event.target.value) || 0 } })} /></label>)}
           </div>
-          <button className="primary-btn" onClick={() => { store.saveExamTemplate(bankId, template); refresh(); alert('模板已保存'); }}>保存模板</button>
+          <div className="button-row">
+            <button className="primary-btn" onClick={() => saveTemplate()}>保存模板</button>
+            <button className="ghost-btn" disabled={template.isDefault} onClick={() => saveTemplate({ isDefault: true })}>设为默认</button>
+          </div>
         </Panel>
       )}
     </div>
@@ -1326,6 +1550,12 @@ function AdminUsers({ snapshot, store, refresh }) {
 }
 
 function BankEditor({ bank, store, refresh, onClose }) {
+  const sortedChapters = [...(bank.chapters || [])].sort((left, right) => {
+    const leftOrder = Number(left.sortOrder ?? left.sort_order ?? Number.MAX_SAFE_INTEGER);
+    const rightOrder = Number(right.sortOrder ?? right.sort_order ?? Number.MAX_SAFE_INTEGER);
+    if (leftOrder !== rightOrder) return leftOrder - rightOrder;
+    return String(left.name || '').localeCompare(String(right.name || ''), 'zh-Hans-CN');
+  });
   const [form, setForm] = useState({
     name: bank.name,
     description: bank.description || '',
@@ -1337,6 +1567,9 @@ function BankEditor({ bank, store, refresh, onClose }) {
   const [questionForm, setQuestionForm] = useState(null);
   const [chapterName, setChapterName] = useState('');
   const [loading, setLoading] = useState(false);
+  const [draggingChapterId, setDraggingChapterId] = useState('');
+  const [dragOverChapterId, setDragOverChapterId] = useState('');
+  const [sortStatus, setSortStatus] = useState('');
 
   async function loadQuestions() {
     setLoading(true);
@@ -1363,6 +1596,7 @@ function BankEditor({ bank, store, refresh, onClose }) {
     if (!chapterName.trim()) return;
     await store.createChapter({ bankId: bank.id, name: chapterName.trim() });
     setChapterName('');
+    setSortStatus('章节已新增');
     refresh();
   }
 
@@ -1372,6 +1606,46 @@ function BankEditor({ bank, store, refresh, onClose }) {
     await store.updateChapter({ id: chapter.id, bankId: bank.id, name });
     refresh();
     await loadQuestions();
+  }
+
+  async function moveChapter(chapter, direction) {
+    const currentIndex = sortedChapters.findIndex((item) => item.id === chapter.id);
+    const targetIndex = currentIndex + direction;
+    if (currentIndex < 0 || targetIndex < 0 || targetIndex >= sortedChapters.length) return;
+    const swapped = [...sortedChapters];
+    [swapped[currentIndex], swapped[targetIndex]] = [swapped[targetIndex], swapped[currentIndex]];
+    await saveChapterOrder(swapped);
+  }
+
+  async function reorderChapters(sourceId, targetId) {
+    if (!sourceId || !targetId || sourceId === targetId) return;
+    const sourceIndex = sortedChapters.findIndex((item) => item.id === sourceId);
+    const targetIndex = sortedChapters.findIndex((item) => item.id === targetId);
+    if (sourceIndex < 0 || targetIndex < 0) return;
+    const next = [...sortedChapters];
+    const [moved] = next.splice(sourceIndex, 1);
+    next.splice(targetIndex, 0, moved);
+    await saveChapterOrder(next);
+  }
+
+  async function saveChapterOrder(chapters) {
+    setSortStatus('正在保存排序...');
+    try {
+      await Promise.all(chapters.map((item, index) => store.updateChapter({
+        id: item.id,
+        bankId: bank.id,
+        name: item.name,
+        sortOrder: index + 1
+      })));
+      setSortStatus('排序已保存');
+      refresh();
+    } catch (error) {
+      setSortStatus('排序保存失败，请重试');
+      throw error;
+    } finally {
+      setDraggingChapterId('');
+      setDragOverChapterId('');
+    }
   }
 
   async function removeChapter(chapter) {
@@ -1421,12 +1695,38 @@ function BankEditor({ bank, store, refresh, onClose }) {
             <input placeholder="新章节名称" value={chapterName} onChange={(event) => setChapterName(event.target.value)} />
             <button className="primary-btn" onClick={addChapter}>新增章节</button>
           </div>
+          <p className="sort-helper">拖动章节行可调整顺序，松开后自动保存；也可以用上移、下移做精确调整。</p>
+          {sortStatus && <p className={`sort-status ${sortStatus.includes('失败') ? 'error' : ''}`}>{sortStatus}</p>}
           <div className="table-list detail-table">
-            {bank.chapters.map((chapter) => (
-              <div key={chapter.id}>
-                <span>{chapter.name}</span>
+            {sortedChapters.map((chapter, chapterIndex) => (
+              <div
+                key={chapter.id}
+                className={[
+                  'chapter-sort-row',
+                  draggingChapterId === chapter.id ? 'dragging-row' : '',
+                  dragOverChapterId === chapter.id && draggingChapterId !== chapter.id ? 'drag-over-row' : ''
+                ].filter(Boolean).join(' ')}
+                draggable
+                onDragStart={() => setDraggingChapterId(chapter.id)}
+                onDragOver={(event) => {
+                  event.preventDefault();
+                  if (draggingChapterId && draggingChapterId !== chapter.id) setDragOverChapterId(chapter.id);
+                }}
+                onDragLeave={() => setDragOverChapterId('')}
+                onDrop={() => reorderChapters(draggingChapterId, chapter.id)}
+                onDragEnd={() => {
+                  setDraggingChapterId('');
+                  setDragOverChapterId('');
+                }}
+              >
+                <span className="drag-handle"><em>{chapterIndex + 1}</em>{chapter.name}</span>
                 <span>{questions.filter((item) => item.chapterId === chapter.id).length} 题</span>
-                <strong className="table-actions"><button className="mini-btn" onClick={() => renameChapter(chapter)}>改名</button><button className="mini-btn danger-mini" onClick={() => removeChapter(chapter)}>删除</button></strong>
+                <strong className="table-actions">
+                  <button className="mini-btn" disabled={chapterIndex === 0} onClick={() => moveChapter(chapter, -1)}>上移</button>
+                  <button className="mini-btn" disabled={chapterIndex === sortedChapters.length - 1} onClick={() => moveChapter(chapter, 1)}>下移</button>
+                  <button className="mini-btn" onClick={() => renameChapter(chapter)}>改名</button>
+                  <button className="mini-btn danger-mini" onClick={() => removeChapter(chapter)}>删除</button>
+                </strong>
               </div>
             ))}
           </div>
@@ -1578,6 +1878,14 @@ function AdminUserDetail({ detail, store, refresh }) {
 
 function AdminLogs({ snapshot, store, refresh }) {
   const [loading, setLoading] = useState(false);
+  const [keyword, setKeyword] = useState('');
+  const [actionFilter, setActionFilter] = useState('');
+  const logs = snapshot.adminLogs || [];
+  const actions = [...new Set(logs.map((log) => log.action).filter(Boolean))];
+  const filteredLogs = logs.filter((log) => {
+    const text = `${actionLabel(log.action)} ${log.action || ''} ${log.target_type || ''} ${log.target_id || ''} ${logDetailText(log)}`.toLowerCase();
+    return (!actionFilter || log.action === actionFilter) && (!keyword.trim() || text.includes(keyword.trim().toLowerCase()));
+  });
 
   async function loadLogs() {
     if (!store.refreshAdminLogs) return;
@@ -1600,18 +1908,23 @@ function AdminLogs({ snapshot, store, refresh }) {
     <div className="page-stack">
       <div className="section-title"><h3>操作日志</h3><p>记录管理员登录、导入题库、生成激活码、删除用户等关键操作。</p></div>
       <Panel>
-        <div className="button-row">
+        <div className="template-toolbar">
+          <input className="search-input" value={keyword} onChange={(event) => setKeyword(event.target.value)} placeholder="搜索操作、目标、详情" />
+          <select value={actionFilter} onChange={(event) => setActionFilter(event.target.value)}>
+            <option value="">全部操作</option>
+            {actions.map((action) => <option key={action} value={action}>{actionLabel(action)}</option>)}
+          </select>
           <button className="ghost-btn" onClick={loadLogs}>{loading ? '刷新中...' : '刷新日志'}</button>
         </div>
         <div className="table-list log-table">
-          {(snapshot.adminLogs || []).map((log) => (
+          {filteredLogs.map((log) => (
             <div key={log.id}>
               <span>{actionLabel(log.action)}</span>
-              <span>{log.target_type || '-'} / {log.target_id || '-'}</span>
+              <span>{log.target_type || '-'} / {log.target_id || '-'}<em>{logDetailText(log)}</em></span>
               <strong>{formatDateTime(log.created_at || log.createdAt)}</strong>
             </div>
           ))}
-          {!(snapshot.adminLogs || []).length && <p className="muted">暂无操作日志。</p>}
+          {!filteredLogs.length && <p className="muted">暂无匹配的操作日志。</p>}
         </div>
       </Panel>
     </div>
@@ -1659,9 +1972,19 @@ function AdminBackup({ store, refresh }) {
   );
 }
 
-function AdminStats({ snapshot }) {
+function AdminStats({ snapshot, store }) {
   const correct = snapshot.attempts.filter((item) => item.correct).length;
   const total = snapshot.attempts.length;
+  function exportStats() {
+    downloadJson({
+      generatedAt: new Date().toISOString(),
+      bankCount: snapshot.banks.length,
+      userCount: snapshot.users.filter((item) => item.role === 'user').length,
+      attempts: snapshot.attempts,
+      banks: snapshot.banks,
+      state: store.exportState?.() ? JSON.parse(store.exportState()) : null
+    }, `学习数据导出-${Date.now()}.json`);
+  }
   return (
     <div className="page-stack">
       <div className="stats-grid">
@@ -1669,6 +1992,11 @@ function AdminStats({ snapshot }) {
         <Metric value={snapshot.users.filter((item) => item.role === 'user').length} label="用户数" />
         <Metric value={total ? `${Math.round((correct / total) * 100)}%` : '0%'} label="正确率" />
       </div>
+      <Panel>
+        <div className="button-row">
+          <button className="ghost-btn" onClick={exportStats}><Download size={16} />批量导出学习数据</button>
+        </div>
+      </Panel>
       <Panel title="最近答题记录">
         <div className="table-list">
           {snapshot.attempts.slice(-12).reverse().map((item) => <div key={item.id}><span>{item.userName}</span><span>{item.bankName}</span><strong className={item.correct ? 'ok-text' : 'bad-text'}>{item.correct ? '正确' : '错误'}</strong></div>)}
@@ -1683,6 +2011,10 @@ function Profile({ snapshot, store, refresh, onLogout }) {
   const [feedback, setFeedback] = useState('');
   const userGrants = snapshot.entitlements[snapshot.currentUser.id] || [];
   const myBanks = snapshot.banks.filter((bank) => snapshot.userBankIds.includes(bank.id));
+  const savedPractice = loadPracticeSession();
+  const totalAttempts = snapshot.stats.attemptCount || snapshot.attempts?.length || 0;
+  const correctAttempts = (snapshot.attempts || []).filter((item) => item.correct).length;
+  const accuracy = totalAttempts ? `${Math.round((correctAttempts / totalAttempts) * 100)}%` : '0%';
 
   async function redeem() {
     const result = await store.redeemActivationCode(code);
@@ -1718,6 +2050,15 @@ function Profile({ snapshot, store, refresh, onLogout }) {
       <Panel title="我的题库">
         {!myBanks.length && <p className="muted">还没有加入题库。</p>}
         {myBanks.map((bank) => <div className="bank-row" key={bank.id}><div><strong>{bank.name}</strong><p>{bank.chapterCount} 个章节 · {bank.questionCount} 题</p></div></div>)}
+      </Panel>
+      <Panel title="学习报告">
+        <div className="stats-grid compact">
+          <Metric value={totalAttempts} label="累计答题" />
+          <Metric value={accuracy} label="当前正确率" />
+          <Metric value={snapshot.stats.wrongCount} label="错题数" danger />
+          <Metric value={savedPractice?.session ? `${(savedPractice.index || 0) + 1}/${savedPractice.session.questions.length}` : '无'} label="续学进度" />
+        </div>
+        {savedPractice?.session && <p className="muted">最近练习：{savedPractice.session.bank?.name || '题库'} · {savedPractice.session.title}</p>}
       </Panel>
       <Panel title="激活码解锁">
         <div className="inline-form">
@@ -1912,6 +2253,8 @@ function actionLabel(action) {
     'user.revoke_grant': '删除授权',
     'bank.import': '导入题库',
     'bank.update': '更新题库',
+    'bank.bulkUpdate': '批量更新题库',
+    'bank.bulkDelete': '批量删除题库',
     'bank.delete': '删除题库',
     'chapter.create': '新增章节',
     'chapter.update': '更新章节',
@@ -1919,10 +2262,34 @@ function actionLabel(action) {
     'question.create': '新增题目',
     'question.update': '更新题目',
     'question.delete': '删除题目',
+    'exam_template.create': '新增考试模板',
+    'exam_template.update': '更新考试模板',
+    'exam_template.bulkDelete': '批量删除考试模板',
     'activation_codes.create': '生成激活码',
     'order.mark_paid': '确认订单支付'
   };
   return labels[action] || action || '操作';
+}
+
+function logDetailText(log) {
+  const detail = log?.detail || log?.detail_json || {};
+  if (typeof detail === 'string') return detail;
+  try {
+    const text = JSON.stringify(detail);
+    return text === '{}' ? '' : text;
+  } catch {
+    return '';
+  }
+}
+
+function downloadJson(data, filename) {
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
 }
 
 function payChannelText(channel) {

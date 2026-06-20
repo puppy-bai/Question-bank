@@ -1,7 +1,10 @@
-const defaultBaseUrl = 'http://127.0.0.1:8787';
+const defaultBaseUrl = 'https://api.090105.xyz';
 
 export function createApiClient(options = {}) {
-  const baseUrl = (options.baseUrl || import.meta.env.VITE_API_BASE_URL || defaultBaseUrl).replace(/\/$/, '');
+  const runtimeBaseUrl = typeof window !== 'undefined' && ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname)
+    ? 'http://127.0.0.1:8787'
+    : defaultBaseUrl;
+  const baseUrl = (options.baseUrl || import.meta.env.VITE_API_BASE_URL || runtimeBaseUrl).replace(/\/$/, '');
   const isAdminPath = typeof window !== 'undefined' && window.location.pathname.startsWith('/admin');
   const legacyUserId = localStorage.getItem('question_bank_user_id') || '';
   const savedAdminToken = localStorage.getItem('question_bank_admin_token') || '';

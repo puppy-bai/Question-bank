@@ -187,6 +187,7 @@ export function createCloudflareStore() {
     async submitAnswer(questionId, answer, source = 'practice') {
       const result = await api.submitAnswer(questionId, answer, source);
       state.attempts.push({ id: crypto.randomUUID(), questionId, answer, correct: result.correct, createdAt: Date.now() });
+      state.stats.attemptCount += 1;
       if (!result.correct) state.stats.wrongCount += 1;
       return result;
     },

@@ -720,18 +720,23 @@ export function createStore() {
     createChapter({ bankId, name }) {
       const bank = state.banks.find((item) => item.id === bankId);
       if (!bank) return null;
-      const chapter = { id: id('ch'), name: String(name || '').trim() || '新章节' };
+      const chapter = {
+        id: id('ch'),
+        name: String(name || '').trim() || '新章节',
+        sortOrder: (bank.chapters.reduce((max, item) => Math.max(max, Number(item.sortOrder || item.sort_order || 0)), 0) || 0) + 1
+      };
       bank.chapters.push(chapter);
       state.adminLogs.unshift(makeAdminLog('chapter.create', 'chapter', chapter.id, { bankId, name: chapter.name }));
       save();
       return chapter;
     },
-    updateChapter({ id: chapterId, chapterId: altChapterId, bankId, name }) {
+    updateChapter({ id: chapterId, chapterId: altChapterId, bankId, name, sortOrder }) {
       const targetId = chapterId || altChapterId;
       const bank = state.banks.find((item) => item.id === bankId || item.chapters.some((chapter) => chapter.id === targetId));
       const chapter = bank?.chapters.find((item) => item.id === targetId);
       if (!chapter) return false;
       chapter.name = String(name || chapter.name).trim();
+      if (sortOrder !== undefined) chapter.sortOrder = Number(sortOrder) || chapter.sortOrder || 0;
       state.questions.forEach((question) => {
         if (question.chapterId === targetId) question.chapterName = chapter.name;
       });
@@ -743,6 +748,7 @@ export function createStore() {
       const bank = state.banks.find((item) => item.chapters.some((chapter) => chapter.id === chapterId));
       if (!bank) return false;
       bank.chapters = bank.chapters.filter((chapter) => chapter.id !== chapterId);
+      bank.chapters.forEach((chapter, index) => { chapter.sortOrder = index + 1; });
       const questionIds = state.questions.filter((question) => question.chapterId === chapterId).map((question) => question.id);
       state.questions = state.questions.filter((question) => question.chapterId !== chapterId);
       state.attempts = state.attempts.filter((attempt) => !questionIds.includes(attempt.questionId));
@@ -816,6 +822,7 @@ export function createStore() {
         ...validQuestions.map((item) => item.chapterName || '默认章节')
       ])];
       const savedChapters = chapterNames.map((chapterName) => ({ id: id('ch'), name: chapterName }));
+      savedChapters.forEach((chapter, index) => { chapter.sortOrder = index + 1; });
       const chapterIdMap = Object.fromEntries(savedChapters.map((chapter) => [chapter.name, chapter.id]));
       state.banks.push({
         id: bankId,

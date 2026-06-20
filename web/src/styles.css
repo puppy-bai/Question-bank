@@ -537,7 +537,19 @@ textarea {
 }
 
 .template-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
   margin-top: 14px;
+}
+
+.template-toolbar select {
+  flex: 1 1 240px;
+}
+
+.search-input {
+  flex: 1 1 260px;
 }
 
 .template-list {
@@ -561,6 +573,17 @@ textarea {
   text-align: left;
 }
 
+.template-select {
+  min-width: 0;
+  border: 0;
+  padding: 0;
+  display: grid;
+  gap: 5px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+
 .template-item.active {
   border-color: #0f766e;
   background: #f0fdfa;
@@ -577,6 +600,112 @@ textarea {
   color: #607089;
   font-size: 13px;
   font-weight: 850;
+}
+
+.template-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.sort-helper,
+.sort-status {
+  margin: 10px 0 0;
+  color: #607089;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.sort-status {
+  display: inline-flex;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: #eefcf8;
+  color: #0f766e;
+}
+
+.sort-status.error {
+  background: #fff1f2;
+  color: #be123c;
+}
+
+.chapter-sort-row {
+  border-radius: 8px;
+  transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+}
+
+.chapter-sort-row:hover {
+  background: #f8fbfd;
+}
+
+.drag-handle {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+  cursor: grab;
+  font-weight: 900;
+}
+
+.drag-handle:active {
+  cursor: grabbing;
+}
+
+.drag-handle em {
+  flex: 0 0 auto;
+  min-width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: #e8f7f4;
+  color: #0f766e;
+  font-style: normal;
+  font-size: 12px;
+}
+
+.dragging-row {
+  opacity: 0.72;
+  background: #f0fdfa;
+  transform: scale(0.995);
+}
+
+.drag-over-row {
+  background: #ecfeff;
+  box-shadow: inset 3px 0 0 #0f766e;
+}
+
+.template-select-all {
+  margin-top: 12px;
+}
+
+.compact-input {
+  width: 110px;
+}
+
+.resume-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.resume-row p {
+  margin: 4px 0 0;
+  color: #607089;
+  font-weight: 800;
+}
+
+.log-table em {
+  display: block;
+  margin-top: 4px;
+  color: #607089;
+  font-style: normal;
+  font-size: 12px;
+  font-weight: 700;
+  word-break: break-all;
 }
 
 .card-heading {
